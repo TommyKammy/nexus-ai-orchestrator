@@ -78,8 +78,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "json": "={{ JSON.stringify({ status: \"success\", message: \"Audit event recorded\" }) }}",
-        "jsCode": "const insertResult = $input.first().json;\nconst row = Array.isArray(insertResult) ? insertResult[0] : insertResult;\n\nreturn [{\n  json: {\n    status: 'success',\n    message: 'Audit event recorded',\n    audit_event_id: row?.id || null,\n    request_id: row?.request_id || $('Validate Input').first().json.request_id || null,\n    created_at: row?.created_at || null\n  }\n}];"
+        "json": "={{ (() => {\n  const insertResult = $('Insert Audit').first().json;\n  const row = Array.isArray(insertResult) ? insertResult[0] : insertResult;\n  return JSON.stringify({\n    status: 'success',\n    message: 'Audit event recorded',\n    audit_event_id: row?.id || null,\n    request_id: row?.request_id || $('Validate Input').first().json.request_id || null,\n    created_at: row?.created_at || null,\n  });\n})() }}"
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,

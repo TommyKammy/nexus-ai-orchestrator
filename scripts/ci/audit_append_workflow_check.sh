@@ -20,11 +20,11 @@ check_workflow() {
   local workflow_path="$1"
   local query
   local query_replacement
-  local response_code
+  local response_json
 
   query="$(jq -r '.nodes[] | select(.name == "Insert Audit") | .parameters.query' "$workflow_path")"
   query_replacement="$(jq -r '.nodes[] | select(.name == "Insert Audit") | .parameters.additionalFields.queryReplacement' "$workflow_path")"
-  response_code="$(jq -r '.nodes[] | select(.name == "Success Response") | .parameters.jsCode' "$workflow_path")"
+  response_json="$(jq -r '.nodes[] | select(.name == "Success Response") | .parameters.json' "$workflow_path")"
 
   for pattern in "${query_patterns[@]}"; do
     if ! grep -Fq "$pattern" <<< "$query"; then
@@ -39,8 +39,8 @@ check_workflow() {
   fi
 
   for pattern in "${response_patterns[@]}"; do
-    if ! grep -Fq "$pattern" <<< "$response_code"; then
-      echo "Missing '${pattern}' in Success Response for ${workflow_path}" >&2
+    if ! grep -Fq "$pattern" <<< "$response_json"; then
+      echo "Missing '${pattern}' in Success Response json for ${workflow_path}" >&2
       exit 1
     fi
   done

@@ -175,7 +175,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Merge Insert Vector result with original data\nconst insertResult = $input.first().json;\nconst original = $('Parse Embedding').first().json;\n\nreturn [{\n  json: {\n    ...original,\n    id: insertResult[0]?.id || null,\n    content_hash: insertResult[0]?.content_hash || original.content_hash || null\n  }\n}];"
+        "jsCode": "// Merge Insert Vector result with original data\nconst insertResult = $input.first().json;\nconst original = $('Parse Embedding').first().json;\nconst row = Array.isArray(insertResult) ? insertResult[0] : insertResult;\n\nreturn [{\n  json: {\n    ...original,\n    id: row?.id || null,\n    content_hash: row?.content_hash || original.content_hash || null\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,

@@ -9,7 +9,10 @@
       },
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [250, 300],
+      "position": [
+        250,
+        300
+      ],
       "webhookId": "memory-ingest",
       "name": "Webhook"
     },
@@ -19,7 +22,10 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
-      "position": [450, 300],
+      "position": [
+        450,
+        300
+      ],
       "name": "Validate and Filter"
     },
     {
@@ -28,7 +34,10 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
-      "position": [650, 200],
+      "position": [
+        650,
+        200
+      ],
       "name": "Check Validation"
     },
     {
@@ -51,7 +60,10 @@
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [850, 400],
+      "position": [
+        850,
+        400
+      ],
       "name": "Evaluate Policy"
     },
     {
@@ -60,7 +72,10 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
-      "position": [1050, 400],
+      "position": [
+        1050,
+        400
+      ],
       "name": "Check Policy"
     },
     {
@@ -70,7 +85,10 @@
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [850, 200],
+      "position": [
+        850,
+        200
+      ],
       "name": "Error Response"
     },
     {
@@ -81,7 +99,10 @@
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
-      "position": [1250, 400],
+      "position": [
+        1250,
+        400
+      ],
       "name": "Insert Facts",
       "credentials": {
         "postgres": {
@@ -114,7 +135,10 @@
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1450, 400],
+      "position": [
+        1450,
+        400
+      ],
       "name": "Generate Embedding"
     },
     {
@@ -123,18 +147,24 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
-      "position": [1650, 400],
+      "position": [
+        1650,
+        400
+      ],
       "name": "Parse Embedding"
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "INSERT INTO memory_vectors (tenant_id, scope, content, embedding, created_at)\nVALUES ('{{ $input.first().json.tenant_id }}', '{{ $input.first().json.scope }}', '{{ $input.first().json.text.replace(/'/g, \"''\") }}', '{{ $input.first().json.embedding }}'::vector, NOW())\nRETURNING id;",
+        "query": "INSERT INTO memory_vectors (\n  tenant_id,\n  scope,\n  content,\n  embedding,\n  tags,\n  source,\n  content_hash,\n  metadata_jsonb,\n  created_at\n)\nVALUES (\n  '{{ $input.first().json.tenant_id }}',\n  '{{ $input.first().json.scope }}',\n  '{{ $input.first().json.text.replace(/'/g, \"''\") }}',\n  '{{ $input.first().json.embedding }}'::vector,\n  '{{ JSON.stringify($input.first().json.tags || []).replace(/'/g, \"''\") }}'::jsonb,\n  '{{ String($input.first().json.source || \"unknown\").replace(/'/g, \"''\") }}',\n  md5('{{ $input.first().json.text.replace(/'/g, \"''\") }}'),\n  '{{ JSON.stringify({ request_id: $input.first().json.request_id || null, source: $input.first().json.source || \"unknown\", tags: $input.first().json.tags || [], facts_count: Array.isArray($input.first().json.facts) ? $input.first().json.facts.length : 0, policy: $input.first().json.policy || {} }).replace(/'/g, \"''\") }}'::jsonb,\n  NOW()\n)\nON CONFLICT (tenant_id, scope, content_hash)\nDO UPDATE SET\n  content = EXCLUDED.content,\n  embedding = EXCLUDED.embedding,\n  tags = EXCLUDED.tags,\n  source = EXCLUDED.source,\n  metadata_jsonb = EXCLUDED.metadata_jsonb,\n  created_at = NOW()\nRETURNING id, content_hash;",
         "additionalFields": {}
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
-      "position": [1850, 400],
+      "position": [
+        1850,
+        400
+      ],
       "name": "Insert Vector",
       "credentials": {
         "postgres": {
@@ -145,11 +175,14 @@
     },
     {
       "parameters": {
-        "jsCode": "// Merge Insert Vector result with original data\nconst insertResult = $input.first().json;\nconst original = $('Parse Embedding').first().json;\n\nreturn [{\n  json: {\n    ...original,\n    id: insertResult[0]?.id || null\n  }\n}];"
+        "jsCode": "// Merge Insert Vector result with original data\nconst insertResult = $input.first().json;\nconst original = $('Parse Embedding').first().json;\n\nreturn [{\n  json: {\n    ...original,\n    id: insertResult[0]?.id || null,\n    content_hash: insertResult[0]?.content_hash || original.content_hash || null\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
-      "position": [2020, 400],
+      "position": [
+        2020,
+        400
+      ],
       "name": "Prepare Response"
     },
     {
@@ -160,7 +193,10 @@
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
-      "position": [2150, 400],
+      "position": [
+        2150,
+        400
+      ],
       "name": "Insert Audit",
       "credentials": {
         "postgres": {
@@ -176,7 +212,10 @@
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [2350, 400],
+      "position": [
+        2350,
+        400
+      ],
       "name": "Success Response"
     }
   ],

@@ -4,9 +4,9 @@ This directory contains implementation and verification reports that were previo
 
 ## Contents
 
-- `IMPLEMENTATION-SUMMARY.md`
-- `PHASE2-SUMMARY.md`
-- `PHASE3-SUMMARY.md`
-- `PRODUCTION-CERTIFICATION-COMPLETE.md`
-- `FINAL-VERIFICATION-COMPLETE.md`
-- `SECURITY_AUDIT_REPORT.md`
+- `implementation-summary.md`
+- `phase2-summary.md`
+- `phase3-summary.md`
+- `production-certification-complete.md`
+- `final-verification-complete.md`
+- `security-audit-report.md`

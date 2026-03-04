@@ -293,9 +293,9 @@ b495f14 - feat: Phase 2 hardening - response fixes, PCA, monitoring
 
 ### Documentation
 - `README.md` - Setup and usage guide
-- `IMPLEMENTATION-SUMMARY.md` - Phase 1 summary
-- `PHASE2-SUMMARY.md` - Phase 2 summary
-- `PHASE3-SUMMARY.md` - Phase 3 summary
+- `implementation-summary.md` - Phase 1 summary
+- `phase2-summary.md` - Phase 2 summary
+- `phase3-summary.md` - Phase 3 summary
 
 ---
 

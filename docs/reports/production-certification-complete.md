@@ -201,10 +201,10 @@ b495f14 feat: Phase 2 hardening
 
 ### Documentation (15)
 - README.md
-- IMPLEMENTATION-SUMMARY.md
-- PHASE2-SUMMARY.md
-- PHASE3-SUMMARY.md
-- FINAL-VERIFICATION-COMPLETE.md
+- implementation-summary.md
+- phase2-summary.md
+- phase3-summary.md
+- final-verification-complete.md
 - 11 work logs
 
 ---

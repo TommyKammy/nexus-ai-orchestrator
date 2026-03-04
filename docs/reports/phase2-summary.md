@@ -138,7 +138,7 @@ docker exec ai-postgres psql -U ai_user -d ai_memory -f monitor_pgvector.sql
 │   ├── requirements.txt           [NEW] Python dependencies
 │   ├── pgvector_tuning.sql        [NEW] Query tuning script
 │   └── monitor_pgvector.sql       [NEW] Monitoring script
-├── IMPLEMENTATION-SUMMARY.md      [NEW] Phase 1 summary
+├── implementation-summary.md      [NEW] Phase 1 summary
 └── worklog/
     ├── WORKLOG-response-fix-20260214-1037.md
     ├── WORKLOG-pca-reduction-20260214-1038.md

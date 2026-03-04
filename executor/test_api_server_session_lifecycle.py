@@ -117,34 +117,36 @@ def test_session_lifecycle_create_execute_destroy():
 
 def test_session_create_policy_denied_returns_403_without_creating_session():
     manager = SessionManager(default_ttl=300, max_sessions=5, enable_cleanup_thread=False)
-    with patch("executor.api_server.API_KEY", None), patch(
-        "executor.api_server.session_manager", manager
-    ), patch(
-        "executor.session.CodeSandbox", _FakeSandbox
-    ), patch(
-        "executor.api_server.policy_client.evaluate",
-        return_value={
-            "decision": "deny",
-            "allow": False,
-            "requires_approval": False,
-            "risk_score": 90,
-            "reasons": ["task_type_not_allowed"],
-        },
-    ), patch("executor.api_server.policy_client.enforce", return_value=False):
-        server, thread = _start_server()
-        try:
-            status, payload = _post_json(
-                server.server_port,
-                "/session/create",
-                {"tenant_id": "t1", "scope": "analysis", "template": "default", "ttl": 120},
-            )
-        finally:
-            server.shutdown()
-            server.server_close()
-            thread.join(timeout=2)
-            manager.stop()
+    try:
+        with patch("executor.api_server.API_KEY", None), patch(
+            "executor.api_server.session_manager", manager
+        ), patch(
+            "executor.session.CodeSandbox", _FakeSandbox
+        ), patch(
+            "executor.api_server.policy_client.evaluate",
+            return_value={
+                "decision": "deny",
+                "allow": False,
+                "requires_approval": False,
+                "risk_score": 90,
+                "reasons": ["task_type_not_allowed"],
+            },
+        ), patch("executor.api_server.policy_client.enforce", return_value=False):
+            server, thread = _start_server()
+            try:
+                status, payload = _post_json(
+                    server.server_port,
+                    "/session/create",
+                    {"tenant_id": "t1", "scope": "analysis", "template": "default", "ttl": 120},
+                )
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
 
-    assert status == 403
-    assert payload["status"] == "error"
-    assert "policy denied" in payload["error"].lower()
-    assert manager.list_sessions() == []
+        assert status == 403
+        assert payload["status"] == "error"
+        assert "policy denied" in payload["error"].lower()
+        assert manager.list_sessions() == []
+    finally:
+        manager.stop()

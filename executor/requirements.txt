@@ -3,6 +3,7 @@
 
 # Docker SDK for Python
 docker==7.1.0
+redis==5.0.1
 
 # Testing
 pytest==8.0.0

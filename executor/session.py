@@ -7,6 +7,7 @@ and resource pooling for sandbox containers.
 """
 
 import logging
+import os
 import threading
 import time
 import uuid
@@ -19,6 +20,29 @@ from executor.sandbox import CodeSandbox
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+class RedisSessionStateStore:
+    """Persists session metadata and TTL state in Redis."""
+
+    def __init__(self, redis_url: str, key_prefix: str = "executor:session:"):
+        import redis  # Imported lazily to avoid hard dependency when disabled
+
+        self._client = redis.Redis.from_url(redis_url, decode_responses=True)
+        self._key_prefix = key_prefix
+
+    def _key(self, session_id: str) -> str:
+        return f"{self._key_prefix}{session_id}"
+
+    def ping(self) -> None:
+        self._client.ping()
+
+    def save(self, session_id: str, payload: Dict[str, Any], ttl: int) -> None:
+        expires_in = max(1, int(ttl))
+        self._client.set(self._key(session_id), json.dumps(payload), ex=expires_in)
+
+    def delete(self, session_id: str) -> None:
+        self._client.delete(self._key(session_id))
 
 
 @dataclass
@@ -72,7 +96,8 @@ class SessionManager:
         default_ttl: int = 300,  # 5 minutes
         max_sessions: int = 10,
         cleanup_interval: int = 60,  # 1 minute
-        enable_cleanup_thread: bool = True
+        enable_cleanup_thread: bool = True,
+        state_store: Optional[Any] = None,
     ):
         """
         Initialize session manager.
@@ -102,9 +127,60 @@ class SessionManager:
             "sessions_expired": 0,
             "errors": 0
         }
+        self._state_store = state_store if state_store is not None else self._create_state_store_from_env()
         
         if enable_cleanup_thread:
             self._start_cleanup_thread()
+
+    def _create_state_store_from_env(self) -> Optional[RedisSessionStateStore]:
+        redis_url = os.environ.get("SESSION_STATE_REDIS_URL", "").strip()
+        if not redis_url:
+            return None
+
+        key_prefix = os.environ.get("SESSION_STATE_REDIS_PREFIX", "executor:session:")
+        try:
+            store = RedisSessionStateStore(redis_url, key_prefix=key_prefix)
+            store.ping()
+            logger.info("Redis session state enabled: %s", redis_url)
+            return store
+        except Exception as exc:
+            logger.error("Failed to initialize Redis session state store: %s", exc)
+            self.metrics["errors"] += 1
+            return None
+
+    def _session_state_payload(self, session: Session) -> Dict[str, Any]:
+        return {
+            "id": session.id,
+            "template": session.template,
+            "created_at": session.created_at,
+            "last_used": session.last_used,
+            "ttl": session.ttl,
+            "metadata": session.metadata,
+            "is_active": session.is_active,
+            "use_count": session.use_count,
+        }
+
+    def _save_session_state(self, session: Session):
+        if not self._state_store:
+            return
+        try:
+            self._state_store.save(
+                session.id,
+                self._session_state_payload(session),
+                session.ttl,
+            )
+        except Exception as exc:
+            logger.warning("Failed to persist session state for %s: %s", session.id, exc)
+            self.metrics["errors"] += 1
+
+    def _delete_session_state(self, session_id: str):
+        if not self._state_store:
+            return
+        try:
+            self._state_store.delete(session_id)
+        except Exception as exc:
+            logger.warning("Failed to delete session state for %s: %s", session_id, exc)
+            self.metrics["errors"] += 1
     
     def create_session(
         self,
@@ -165,6 +241,7 @@ class SessionManager:
                 
                 self.sessions[session_id] = session
                 self.metrics["sessions_created"] += 1
+                self._save_session_state(session)
                 
                 logger.info(f"Session created: {session_id} (template: {template})")
                 return session_id
@@ -209,6 +286,7 @@ class SessionManager:
             
             session.touch()
             self.metrics["sessions_reused"] += 1
+            self._save_session_state(session)
             
             return session
     
@@ -275,6 +353,7 @@ class SessionManager:
             session.is_active = False
             session.sandbox.destroy()
             del self.sessions[session_id]
+            self._delete_session_state(session_id)
             self.metrics["sessions_destroyed"] += 1
             
             # Release semaphore slot to allow new session creation

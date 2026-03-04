@@ -90,7 +90,7 @@ services:
         # Start executor API in isolated virtualenv (PEP 668-safe)
         apk add --no-cache python3 py3-pip
         python3 -m venv /venv
-        /venv/bin/pip install --no-cache-dir docker
+        /venv/bin/pip install --no-cache-dir docker redis
         echo 'Starting API server...'
         cd /workspace
         exec /venv/bin/python -m executor.api_server

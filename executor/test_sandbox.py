@@ -5,8 +5,9 @@ Phase 1: Core Sandbox Infrastructure
 
 import json
 import pytest
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from unittest.mock import Mock, patch, MagicMock
-from executor.sandbox import CodeSandbox, SandboxError
+from executor.sandbox import CodeSandbox, SandboxError, SandboxTimeoutError
 
 
 class TestCodeSandbox:
@@ -129,6 +130,37 @@ class TestCodeSandbox:
         assert result['status'] == "error"
         assert result['exit_code'] == 1
         assert "SyntaxError" in result['stderr']
+
+    def test_run_code_timeout_returns_error(self, mock_docker_client, sandbox):
+        """Test run_code timeout handling."""
+        mock_container = Mock()
+        sandbox.container = mock_container
+
+        with patch.object(sandbox, "_exec_run_with_timeout", side_effect=SandboxTimeoutError("timeout")):
+            result = sandbox.run_code("while True: pass")
+
+        assert result["status"] == "error"
+        assert result["exit_code"] == -1
+        assert "timeout" in result["error"]
+
+    def test_exec_run_with_timeout_destroys_sandbox(self, mock_docker_client, sandbox):
+        """Test timeout enforcement and cleanup during exec_run."""
+        mock_container = Mock()
+        sandbox.container = mock_container
+        sandbox.timeout = 1
+
+        mock_future = Mock()
+        mock_future.result.side_effect = FuturesTimeoutError()
+        mock_executor = Mock()
+        mock_executor.submit.return_value = mock_future
+
+        with patch("executor.sandbox.ThreadPoolExecutor", return_value=mock_executor), patch.object(
+            sandbox, "destroy"
+        ) as mock_destroy:
+            with pytest.raises(SandboxTimeoutError):
+                sandbox._exec_run_with_timeout(["python", "main.py"])
+
+        mock_destroy.assert_called_once()
     
     def test_run_code_no_container(self, mock_docker_client, sandbox):
         """Test run_code when container not created."""
@@ -269,8 +301,27 @@ class TestSecurity:
         config = call_args[1]
         
         assert config['mem_limit'] == "256m"
+        assert config['memswap_limit'] == "256m"
         assert config['cpu_quota'] == 50000
         assert config['cpu_period'] == 100000
+        assert config['pids_limit'] == 128
+        ulimits = {u.name: u for u in config["ulimits"]}
+        assert "nofile" in ulimits
+        assert "nproc" in ulimits
+        assert ulimits["nofile"].soft == 1024
+        assert ulimits["nproc"].hard == 256
+
+    def test_invalid_timeout_rejected(self, mock_docker_client):
+        with pytest.raises(ValueError, match="timeout must be between 1 and 3600 seconds"):
+            CodeSandbox(timeout=0)
+
+    def test_invalid_memory_limit_rejected(self, mock_docker_client):
+        with pytest.raises(ValueError, match="memory_limit must match format"):
+            CodeSandbox(memory_limit="1024")
+
+    def test_invalid_cpu_quota_rejected(self, mock_docker_client):
+        with pytest.raises(ValueError, match="cpu_quota must be greater than 0"):
+            CodeSandbox(cpu_quota=0)
 
 
 if __name__ == "__main__":

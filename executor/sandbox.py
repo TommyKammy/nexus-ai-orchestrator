@@ -9,12 +9,14 @@ untrusted code safely.
 import docker
 import logging
 import os
+import re
 import tarfile
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from io import BytesIO
 from typing import Dict, List, Optional, Any, Union
+from docker.types import Ulimit
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -44,6 +46,13 @@ class CodeSandbox:
             cpu_quota: CPU quota (100000 = 1 core)
             network_disabled: Whether to disable network access
         """
+        if timeout < 1 or timeout > 3600:
+            raise ValueError("timeout must be between 1 and 3600 seconds")
+        if not re.match(r"^\d+[mMgG]$", memory_limit):
+            raise ValueError("memory_limit must match format like '512m' or '1g'")
+        if cpu_quota <= 0:
+            raise ValueError("cpu_quota must be greater than 0")
+
         self.image = image
         self.timeout = timeout
         self.memory_limit = memory_limit
@@ -77,13 +86,19 @@ class CodeSandbox:
                 "tty": True,
                 "stdin_open": True,
                 "mem_limit": self.memory_limit,
+                "memswap_limit": self.memory_limit,
                 "cpu_quota": self.cpu_quota,
                 "cpu_period": 100000,
+                "pids_limit": 128,
                 "network_disabled": self.network_disabled,
                 "read_only": True,
                 "security_opt": ["no-new-privileges:true"],
                 "cap_drop": ["ALL"],
                 "cap_add": [],
+                "ulimits": [
+                    Ulimit(name="nofile", soft=1024, hard=1024),
+                    Ulimit(name="nproc", soft=256, hard=256),
+                ],
                 "tmpfs": {
                     "/tmp": "rw,noexec,nosuid,size=100m,uid=1000,gid=1000",
                     "/workspace": "rw,exec,nosuid,size=50m,uid=1000,gid=1000"

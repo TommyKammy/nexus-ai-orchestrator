@@ -30,6 +30,27 @@ class _FakeSandbox:
         }
 
 
+class _FakeStateStore:
+    def __init__(self):
+        self.saved = {}
+        self.deleted = []
+
+    def save(self, session_id, payload, ttl):
+        self.saved[session_id] = {"payload": payload, "ttl": ttl}
+
+    def delete(self, session_id):
+        self.deleted.append(session_id)
+        self.saved.pop(session_id, None)
+
+
+class _FailingStateStore:
+    def save(self, session_id, payload, ttl):
+        raise RuntimeError("save failed")
+
+    def delete(self, session_id):
+        raise RuntimeError("delete failed")
+
+
 def _start_server():
     server = HTTPServer(("127.0.0.1", 0), ExecutorHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -146,5 +167,65 @@ def test_session_create_policy_denied_returns_403_without_creating_session():
         assert payload["status"] == "error"
         assert "policy denied" in payload["error"].lower()
         assert manager.list_sessions() == []
+    finally:
+        manager.stop()
+
+
+def test_session_manager_persists_ttl_state_with_store():
+    state_store = _FakeStateStore()
+    manager = SessionManager(
+        default_ttl=300,
+        max_sessions=5,
+        enable_cleanup_thread=False,
+        state_store=state_store,
+    )
+    try:
+        with patch("executor.session.CodeSandbox", _FakeSandbox):
+            session_id = manager.create_session(
+                template="default",
+                ttl=45,
+                metadata={"tenant_id": "t1", "scope": "analysis"},
+            )
+
+            assert state_store.saved[session_id]["ttl"] == 45
+            assert state_store.saved[session_id]["payload"]["metadata"]["tenant_id"] == "t1"
+
+            session = manager.get_session(session_id)
+            assert session is not None
+            assert state_store.saved[session_id]["payload"]["use_count"] == 1
+
+            assert manager.destroy_session(session_id) is True
+            assert session_id in state_store.deleted
+    finally:
+        manager.stop()
+
+
+def test_session_manager_state_store_errors_do_not_break_lifecycle():
+    manager = SessionManager(
+        default_ttl=300,
+        max_sessions=5,
+        enable_cleanup_thread=False,
+        state_store=_FailingStateStore(),
+    )
+    try:
+        with patch("executor.session.CodeSandbox", _FakeSandbox):
+            session_id = manager.create_session(template="default", ttl=60)
+            assert manager.get_session(session_id) is not None
+            assert manager.destroy_session(session_id) is True
+            assert manager.metrics["errors"] >= 2
+    finally:
+        manager.stop()
+
+
+def test_session_manager_state_store_none_disables_env_auto_init():
+    with patch.dict("os.environ", {"SESSION_STATE_REDIS_URL": "redis://127.0.0.1:6379/0"}):
+        manager = SessionManager(
+            default_ttl=300,
+            max_sessions=5,
+            enable_cleanup_thread=False,
+            state_store=None,
+        )
+    try:
+        assert manager._state_store is None
     finally:
         manager.stop()

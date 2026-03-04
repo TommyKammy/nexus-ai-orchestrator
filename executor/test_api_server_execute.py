@@ -2,7 +2,7 @@ import http.client
 import json
 import threading
 from http.server import HTTPServer
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from executor.api_server import ExecutorHandler
 
@@ -220,3 +220,77 @@ def test_execute_policy_denied_returns_403():
     assert status == 403
     assert payload["status"] == "error"
     assert "Policy denied" in payload["error"]
+
+
+def test_execute_policy_requires_approval_returns_403():
+    with patch("executor.api_server.API_KEY", None), patch(
+        "executor.api_server.template_manager.get_sandbox_kwargs", return_value={}
+    ), patch(
+        "executor.api_server.policy_client.evaluate",
+        return_value={
+            "decision": "requires_approval",
+            "allow": False,
+            "requires_approval": True,
+            "risk_score": 55,
+            "reasons": ["high_risk_requires_approval"],
+        },
+    ), patch("executor.api_server.policy_client.enforce", return_value=False), patch(
+        "executor.api_server.CodeSandbox"
+    ) as sandbox_cls:
+        server, thread = _start_server()
+        try:
+            status, payload = _post_json(
+                server.server_port,
+                "/execute",
+                {"tenant_id": "t1", "scope": "analysis", "code": "print('blocked')", "language": "python"},
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    assert status == 403
+    assert payload["status"] == "error"
+    assert "requires approval" in payload["error"].lower()
+    sandbox_cls.assert_not_called()
+
+
+def test_execute_policy_evaluated_before_sandbox_run():
+    evaluate_mock = Mock(
+        return_value={
+            "decision": "allow",
+            "allow": True,
+            "requires_approval": False,
+            "risk_score": 0,
+            "reasons": [],
+        }
+    )
+    with patch("executor.api_server.API_KEY", None), patch(
+        "executor.api_server.template_manager.get_sandbox_kwargs", return_value={}
+    ), patch("executor.api_server.policy_client.evaluate", evaluate_mock), patch(
+        "executor.api_server.policy_client.enforce", return_value=True
+    ), patch("executor.api_server.CodeSandbox", _FakeSandbox):
+        server, thread = _start_server()
+        try:
+            status, _payload = _post_json(
+                server.server_port,
+                "/execute",
+                {
+                    "tenant_id": "t1",
+                    "scope": "analysis",
+                    "code": "print('ok')",
+                    "language": "python",
+                    "task_type": "code_execution",
+                },
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    assert status == 200
+    evaluate_mock.assert_called_once()
+    policy_input = evaluate_mock.call_args.args[0]
+    assert policy_input["action"] == "executor.execute"
+    assert policy_input["subject"]["tenant_id"] == "t1"
+    assert policy_input["resource"]["task_type"] == "code_execution"

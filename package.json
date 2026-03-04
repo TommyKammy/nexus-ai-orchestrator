@@ -1,0 +1,12 @@
+{
+  "name": "nexus-ai-orchestrator",
+  "private": true,
+  "packageManager": "pnpm@10.6.4",
+  "scripts": {
+    "lint": "bash scripts/ci/lint.sh",
+    "typecheck": "bash scripts/ci/typecheck.sh",
+    "test": "bash scripts/ci/test.sh",
+    "build": "bash scripts/ci/build.sh",
+    "e2e": "bash scripts/ci/e2e.sh"
+  }
+}

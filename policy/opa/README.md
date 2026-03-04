@@ -8,6 +8,10 @@ The executor and workflows call:
 
 `POST /v1/data/ai/policy/result`
 
+Canonical contract reference:
+
+- `docs/policy-input-output-contract.md`
+
 With input shape:
 
 ```json

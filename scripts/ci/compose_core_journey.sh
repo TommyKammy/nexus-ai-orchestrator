@@ -26,11 +26,13 @@ require_cmd() {
 }
 
 require_cmd docker
-require_cmd curl
 require_cmd jq
 
 POSTGRES_PASSWORD_VAL="$POSTGRES_PASSWORD"
-RUN_ID="$(date +%s)"
+RUN_ID="$(date +%s%N)"
+if [[ -z "$RUN_ID" || "$RUN_ID" == *N ]]; then
+  RUN_ID="$(date +%s)-$RANDOM$RANDOM"
+fi
 CI_TENANT_ID="core-e2e-${RUN_ID}"
 CI_SCOPE="journey:user-42-${RUN_ID}"
 WF_INGEST_NAME="CI Core Journey 01 Memory Ingest ${RUN_ID}"
@@ -48,10 +50,13 @@ postgres_exec() {
 
 cleanup() {
   if docker ps --format '{{.Names}}' | grep -q '^ai-postgres$'; then
-    postgres_exec >/dev/null <<SQL || true
+    if ! postgres_exec >/dev/null <<SQL
 DELETE FROM workflow_entity
 WHERE name IN ('${WF_INGEST_NAME}', '${WF_SEARCH_NAME}', '${WF_EXEC_NAME}');
 SQL
+    then
+      echo "Warning: failed to delete CI workflows during cleanup; manual DB cleanup may be required." >&2
+    fi
   fi
 
   rm -rf "$TMP_DIR"
@@ -83,6 +88,11 @@ wait_for_ready() {
 
 echo "[1/8] Starting compose stack..."
 docker compose up -d postgres redis policy-bundle-server opa n8n caddy >/dev/null
+
+if ! docker exec ai-caddy sh -lc 'command -v curl >/dev/null 2>&1'; then
+  echo "curl is required in ai-caddy container for webhook checks." >&2
+  exit 1
+fi
 
 if ! wait_for_ready 360; then
   echo "n8n readiness check failed." >&2
@@ -172,6 +182,11 @@ jq --arg name "$WF_EXEC_NAME" --arg path "$WF_EXEC_PATH" \
   -f "${TMP_DIR}/patch_04.jq" n8n/workflows-v3/04_executor_dispatch.json >"${TMP_DIR}/04_executor_dispatch.json"
 
 echo "[4/8] Importing credential and CI workflows..."
+postgres_exec >/dev/null <<'SQL'
+DELETE FROM credentials_entity
+WHERE id = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+SQL
+
 jq -n --arg pwd "$POSTGRES_PASSWORD_VAL" \
   '[{"id":"a1b2c3d4-e5f6-7890-abcd-ef1234567890","name":"ai-postgres","type":"postgres","data":{"host":"postgres","port":5432,"database":"ai_memory","user":"ai_user","password":$pwd,"ssl":"disable"}}]' \
   >"${TMP_DIR}/postgres_cred.json"
@@ -252,16 +267,23 @@ wait_for_webhooks_registered 180
 post_webhook() {
   local path="$1"
   local payload="$2"
-  local response http_code
+  local response http_code body
   response="$(
     curl_internal -w $'\n%{http_code}' -H "Content-Type: application/json" \
       -X POST "http://n8n:5678/webhook/${path}" \
       -d "$payload"
   )"
   http_code="${response##*$'\n'}"
+  body="${response%$'\n'*}"
 
   if [[ "$http_code" != "200" ]]; then
     echo "Webhook call failed for ${path}: HTTP ${http_code}" >&2
+    if [[ -n "$body" ]]; then
+      echo "Webhook response body for ${path}:" >&2
+      echo "$body" >&2
+    fi
+    echo "Recent n8n logs:" >&2
+    docker compose logs n8n --tail 100 >&2 || true
     exit 1
   fi
 }

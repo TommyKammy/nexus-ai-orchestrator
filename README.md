@@ -431,6 +431,9 @@ pnpm e2e:compose-core
 
 # The command imports run-scoped CI-safe copies of core workflows
 # and validates successful executions plus DB side effects.
+# Prerequisite: configure `.env` first (at minimum `POSTGRES_PASSWORD`,
+# plus required compose variables such as `N8N_ENCRYPTION_KEY`,
+# `N8N_BASIC_AUTH_PASSWORD`, and `N8N_WEBHOOK_API_KEY`).
 \`\`\`
 
 ## Known Issues

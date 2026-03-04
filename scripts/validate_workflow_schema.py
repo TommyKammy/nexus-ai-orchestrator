@@ -8,6 +8,7 @@ structurally invalid workflow exports fail CI quickly.
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import json
 import sys
 from pathlib import Path
@@ -83,7 +84,8 @@ def validate_workflow(filepath: Path) -> list[str]:
                 errors.append(_err(filepath, f"{label} webhook node missing/invalid parameters.httpMethod"))
 
     # Node names must be unique so connections are deterministic.
-    duplicates = {name for name in node_names if node_names.count(name) > 1}
+    name_counts = Counter(node_names)
+    duplicates = {name for name, count in name_counts.items() if count > 1}
     if duplicates:
         errors.append(_err(filepath, f"duplicate node name(s): {', '.join(sorted(duplicates))}"))
 

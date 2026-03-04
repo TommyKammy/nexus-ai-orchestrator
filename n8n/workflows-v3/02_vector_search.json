@@ -18,7 +18,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const input = $input.first().json.body;\n\nif (!input.tenant_id || !input.scope || !input.query) {\n  return [{\n    json: {\n      error: 'Missing required fields: tenant_id, scope, query'\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    tenant_id: input.tenant_id,\n    scope: input.scope,\n    query: input.query,\n    k: input.k || 5\n  }\n}];"
+        "jsCode": "const input = $input.first().json.body || {};\n\nconst tenantId = String(input.tenant_id || '').trim();\nconst scope = String(input.scope || '').trim();\nconst query = String(input.query || '').trim();\nconst requestedK = Number(input.k);\nconst k = Number.isFinite(requestedK) && requestedK > 0\n  ? Math.min(Math.floor(requestedK), 50)\n  : 5;\n\nif (!tenantId || !scope || !query) {\n  return [{\n    json: {\n      error: 'Missing required fields: tenant_id, scope, query'\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    tenant_id: tenantId,\n    scope,\n    query,\n    k\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
@@ -120,8 +120,10 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "INSERT INTO audit_events (actor, action, target, decision, created_at)\nVALUES ('workflow:vector_search', 'memory_read', '{{ $input.first().json.scope }}', 'allowed', NOW());",
-        "additionalFields": {}
+        "query": "INSERT INTO audit_events (actor, action, target, decision, created_at)\nVALUES ('workflow:vector_search', 'memory_read', $1, 'allowed', NOW());",
+        "additionalFields": {
+          "queryReplacement": "={{ [$('Check Validation').first().json.scope] }}"
+        }
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
@@ -140,7 +142,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "jsCode": "const searchResults = $input.first().json;\nconst original = $('Check Validation').first().json;\n\nconst response = {\n  status: 'success',\n  mode: 'vector_cosine',\n  query: original.query,\n  tenant_id: original.tenant_id,\n  scope: original.scope,\n  k: original.k,\n  results_count: Array.isArray(searchResults) ? searchResults.length : 0,\n  results: Array.isArray(searchResults) ? searchResults.map(r => ({\n    id: r.id,\n    scope: r.scope,\n    content: r.content,\n    tags: r.tags,\n    source: r.source,\n    created_at: r.created_at,\n    cosine_distance: r.cosine_distance\n  })) : [],\n  timestamp: new Date().toISOString()\n};\n\nreturn [{ json: response }];"
+        "jsCode": "const searchResults = $input.first().json;\nconst original = $('Check Validation').first().json;\n\nconst rankedResults = Array.isArray(searchResults)\n  ? searchResults.map((r, index) => {\n      const distance = Number(r.cosine_distance);\n      const similarity = Number.isFinite(distance)\n        ? Math.max(0, Math.min(1, 1 - distance))\n        : null;\n\n      return {\n        id: r.id,\n        rank: index + 1,\n        scope: r.scope,\n        content: r.content,\n        tags: r.tags,\n        source: r.source,\n        created_at: r.created_at,\n        cosine_distance: Number.isFinite(distance) ? distance : null,\n        similarity_score: similarity,\n      };\n    })\n  : [];\n\nconst response = {\n  status: 'success',\n  mode: 'vector_cosine',\n  query: original.query,\n  tenant_id: original.tenant_id,\n  scope: original.scope,\n  k: original.k,\n  results_count: rankedResults.length,\n  results: rankedResults,\n  timestamp: new Date().toISOString()\n};\n\nreturn [{ json: response }];"
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,

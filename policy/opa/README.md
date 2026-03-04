@@ -57,5 +57,5 @@ Inner policy result object shape (this is the value under OPA HTTP `result`):
 ## Local policy tests
 
 ```bash
-opa test policy/opa/authz.rego policy/opa/authz_test.rego -d policy/opa/data.json
+opa test policy/opa/ -d policy/opa/data.json
 ```

@@ -15,6 +15,7 @@ from typing import Dict, List, Optional, Any, Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 import json
+from urllib.parse import urlsplit
 
 from executor.sandbox import CodeSandbox
 
@@ -25,10 +26,21 @@ logger = logging.getLogger(__name__)
 class RedisSessionStateStore:
     """Persists session metadata and TTL state in Redis."""
 
-    def __init__(self, redis_url: str, key_prefix: str = "executor:session:"):
+    def __init__(
+        self,
+        redis_url: str,
+        key_prefix: str = "executor:session:",
+        connect_timeout: float = 0.5,
+        socket_timeout: float = 0.5,
+    ):
         import redis  # Imported lazily to avoid hard dependency when disabled
 
-        self._client = redis.Redis.from_url(redis_url, decode_responses=True)
+        self._client = redis.Redis.from_url(
+            redis_url,
+            decode_responses=True,
+            socket_connect_timeout=connect_timeout,
+            socket_timeout=socket_timeout,
+        )
         self._key_prefix = key_prefix
 
     def _key(self, session_id: str) -> str:
@@ -138,15 +150,30 @@ class SessionManager:
             return None
 
         key_prefix = os.environ.get("SESSION_STATE_REDIS_PREFIX", "executor:session:")
+        connect_timeout_ms = int(os.environ.get("SESSION_STATE_REDIS_CONNECT_TIMEOUT_MS", "500"))
+        socket_timeout_ms = int(os.environ.get("SESSION_STATE_REDIS_SOCKET_TIMEOUT_MS", "500"))
         try:
-            store = RedisSessionStateStore(redis_url, key_prefix=key_prefix)
+            store = RedisSessionStateStore(
+                redis_url,
+                key_prefix=key_prefix,
+                connect_timeout=max(1, connect_timeout_ms) / 1000.0,
+                socket_timeout=max(1, socket_timeout_ms) / 1000.0,
+            )
             store.ping()
-            logger.info("Redis session state enabled: %s", redis_url)
+            logger.info("Redis session state enabled: %s", self._sanitize_redis_target(redis_url))
             return store
         except Exception as exc:
             logger.error("Failed to initialize Redis session state store: %s", exc)
             self.metrics["errors"] += 1
             return None
+
+    def _sanitize_redis_target(self, redis_url: str) -> str:
+        parsed = urlsplit(redis_url)
+        host = parsed.hostname or "unknown"
+        port = f":{parsed.port}" if parsed.port else ""
+        db_path = parsed.path or ""
+        scheme = parsed.scheme or "redis"
+        return f"{scheme}://{host}{port}{db_path}"
 
     def _session_state_payload(self, session: Session) -> Dict[str, Any]:
         return {

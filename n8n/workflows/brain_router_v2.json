@@ -1,0 +1,495 @@
+{
+  "name": "brain_router_v2",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json || {};\nconst brain = input.brain || {};\nconst message = String(input.message || input.text || '');\nconst meta = input.meta || {};\n\nconst provider = String(brain.provider || 'openrouter').toLowerCase();\nconst explicitModel = typeof brain.model === 'string' ? brain.model.trim() : '';\n\nlet selectedModel = explicitModel;\nlet selectedBy = 'explicit';\n\nif (!selectedModel && provider === 'openrouter') {\n  const useCase = String(meta.use_case || meta.workflow || '').toLowerCase();\n  const isLongText = message.length > 3500;\n  const isDigest = useCase.includes('digest') || message.includes('CVE-');\n\n  if (isLongText || isDigest) {\n    selectedModel = 'arcee-ai/trinity-large-preview:free';\n    selectedBy = isLongText ? 'policy:long-text' : 'policy:digest';\n  } else {\n    selectedModel = 'qwen/qwen3-next-80b-a3b-instruct:free';\n    selectedBy = 'policy:default';\n  }\n}\n\nif (!selectedModel && provider === 'openai') {\n  selectedModel = 'gpt-4o-mini';\n  selectedBy = 'policy:openai-default';\n}\n\nreturn [{\n  json: {\n    ...input,\n    brain: {\n      ...brain,\n      provider,\n      model: selectedModel || brain.model,\n      _selectedBy: selectedBy,\n    },\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [340, 300],
+      "name": "Select Model Policy"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json || {};\n\nconst tenant_id = (input.tenant_id || 'unknown').toString().trim();\nconst scope = (input.scope || 'unknown').toString().trim();\nconst message = (input.message || input.text || '').toString();\nconst meta = input.meta || {};\nconst brain = input.brain || {};\n\nconst errors = [];\nif (!tenant_id || tenant_id === 'unknown') errors.push('tenant_id required');\nif (!scope || scope === 'unknown') errors.push('scope required');\nif (!message) errors.push('message required');\n\nlet provider = (brain.provider || 'openrouter').toString().toLowerCase();\nif (!['openrouter', 'openai', 'none'].includes(provider)) provider = 'openrouter';\n\nlet defaultModel = 'qwen/qwen3-next-80b-a3b-instruct:free';\nif (provider === 'openai') defaultModel = 'gpt-4o-mini';\n\nreturn [{\n  json: {\n    tenant_id,\n    scope,\n    message,\n    meta,\n    brain: {\n      provider,\n      model: brain.model || defaultModel,\n      temperature: typeof brain.temperature === 'number' ? brain.temperature : 0.2\n    },\n    validation_errors: errors.length > 0 ? errors : null\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [520, 300],
+      "name": "Normalize Input"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-1",
+              "leftValue": "={{ $json.validation_errors !== null }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [640, 300],
+      "name": "Has Validation Errors?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst errorMsg = data.validation_errors.join(', ');\nreturn [{\n  json: {\n    ok: true,\n    status: 'ERROR',\n    provider: 'none',\n    slack_text: `⚠️ *Brain Router Error*\\n\\nValidation failed: ${errorMsg}`,\n    answer: `Error: ${errorMsg}`,\n    tenant_id: data.tenant_id,\n    scope: data.scope,\n    timestamp: new Date().toISOString(),\n    debug: { http: 200, error: data.validation_errors }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 500],
+      "name": "Return ERROR"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-1",
+              "leftValue": "={{ $json.brain.provider }}",
+              "rightValue": "none",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [840, 300],
+      "name": "Provider is None?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nreturn [{\n  json: {\n    ok: true,\n    status: 'NO_BRAIN',\n    provider: 'none',\n    slack_text: '⚠️ *AI Brain Not Configured*\\n\\nNo LLM provider configured. Set brain.provider to \"openrouter\" or \"openai\" to enable AI features.\\n\\nInput received successfully but no processing performed.',\n    answer: 'AI brain is not configured. Please configure OpenRouter or OpenAI credentials.',\n    tenant_id: data.tenant_id,\n    scope: data.scope,\n    timestamp: new Date().toISOString(),\n    debug: { http: 200, error: null }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [840, 500],
+      "name": "Return NO_BRAIN"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-1",
+              "leftValue": "={{ $json.brain.provider }}",
+              "rightValue": "openrouter",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1040, 300],
+      "name": "Provider is OpenRouter?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openRouterApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $json.brain.model || 'qwen/qwen3-next-80b-a3b-instruct:free', messages: [{ role: 'system', content: 'You are a helpful assistant. Provide concise responses.' }, { role: 'user', content: $json.message }], temperature: $json.brain.temperature || 0.2 }) }}",
+        "options": {
+          "response": {
+            "fullResponse": true
+          },
+          "timeout": 90000,
+          "ignoreHttpStatusErrors": true
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1240, 160],
+      "name": "Call OpenRouter Primary",
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "credentials": {
+        "openRouterApi": {
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-1",
+              "leftValue": "={{ (() => { const r = $json || {}; const s = r.statusCode || r.status || 0; const b = r.body || r || {}; const hasChoices = !!(b.choices && b.choices[0] && b.choices[0].message && b.choices[0].message.content); return hasChoices || (s >= 200 && s < 300 && hasChoices); })() }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1440, 160],
+      "name": "Primary Success?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openRouterApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'arcee-ai/trinity-large-preview:free', messages: [{ role: 'system', content: 'You are a helpful assistant. Provide concise responses.' }, { role: 'user', content: $item(0).$node['Normalize Input'].json.message }], temperature: $item(0).$node['Normalize Input'].json.brain.temperature || 0.2 }) }}",
+        "options": {
+          "response": {
+            "fullResponse": true
+          },
+          "timeout": 90000,
+          "ignoreHttpStatusErrors": true
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1640, 260],
+      "name": "Call OpenRouter Fallback",
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "openRouterApi": {
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-1",
+              "leftValue": "={{ (() => { const r = $json || {}; const s = r.statusCode || r.status || 0; const b = r.body || r || {}; const hasChoices = !!(b.choices && b.choices[0] && b.choices[0].message && b.choices[0].message.content); return hasChoices || (s >= 200 && s < 300 && hasChoices); })() }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1840, 260],
+      "name": "Fallback Success?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $item(0).$node['Normalize Input'].json;\nconst httpData = $input.first().json || {};\nconst body = httpData.body || httpData || {};\nconst statusCode = httpData.statusCode || httpData.status || (body.choices ? 200 : 0);\n\nif (body.choices && body.choices[0]) {\n  const content = body.choices[0].message?.content || 'No response content';\n  return [{\n    json: {\n      ok: true,\n      status: 'OK',\n      provider: 'openrouter',\n      slack_text: content,\n      answer: content,\n      tenant_id: data.tenant_id,\n      scope: data.scope,\n      timestamp: new Date().toISOString(),\n      debug: { http: statusCode, error: null }\n    }\n  }];\n}\n\nconst errorMsg = body.error?.message || httpData.error || httpData.message || `HTTP ${statusCode} error`;\nreturn [{\n  json: {\n    ok: true,\n    status: 'ERROR',\n    provider: 'openrouter',\n    slack_text: `⚠️ *OpenRouter Error*\\n\\n${errorMsg}`,\n    answer: errorMsg,\n    tenant_id: data.tenant_id,\n    scope: data.scope,\n    timestamp: new Date().toISOString(),\n    debug: { http: statusCode, error: body.error || httpData.error || errorMsg }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2060, 160],
+      "name": "Parse OpenRouter Response"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $item(0).$node['Normalize Input'].json;\nconst fallback = $item(0).$node['Call OpenRouter Fallback']?.json || {};\nconst primary = $item(0).$node['Call OpenRouter Primary']?.json || {};\nconst httpData = Object.keys(fallback).length > 0 ? fallback : primary;\nconst statusCode = httpData.statusCode || httpData.status || 0;\nconst body = httpData.body || {};\nconst nodeErr = httpData.error || httpData.message || httpData.description;\nconst errorMsg = body.error?.message || nodeErr || `HTTP ${statusCode} error`;\n\nreturn [{\n  json: {\n    ok: true,\n    status: 'ERROR',\n    provider: 'openrouter',\n    slack_text: `⚠️ *OpenRouter Error*\\n\\n${errorMsg}`,\n    answer: errorMsg,\n    tenant_id: data.tenant_id,\n    scope: data.scope,\n    timestamp: new Date().toISOString(),\n    debug: { http: statusCode, error: body.error || nodeErr || errorMsg, raw: httpData }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2060, 320],
+      "name": "Return OpenRouter ERROR"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "body": {
+          "content": "={{ JSON.stringify({ model: $json.brain.model || 'gpt-4o-mini', messages: [{ role: 'system', content: 'You are a helpful assistant. Provide concise responses.' }, { role: 'user', content: $json.message }], temperature: $json.brain.temperature || 0.2 }) }}",
+          "contentType": "raw"
+        },
+        "options": {
+          "response": {
+            "fullResponse": true
+          },
+          "timeout": 60000,
+          "ignoreHttpStatusErrors": true
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1240, 420],
+      "name": "Call OpenAI",
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "OPENAI_API_KEY_HEADER"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $item(0).$node['Normalize Input'].json;\nconst httpData = $input.all()[0]?.json || {};\n\nconst statusCode = httpData.statusCode || httpData.status || 0;\nconst body = httpData.body || {};\n\nif (statusCode >= 200 && statusCode < 300 && body.choices && body.choices[0]) {\n  const content = body.choices[0].message?.content || 'No response content';\n  return [{\n    json: {\n      ok: true,\n      status: 'OK',\n      provider: 'openai',\n      slack_text: content,\n      answer: content,\n      tenant_id: data.tenant_id,\n      scope: data.scope,\n      timestamp: new Date().toISOString(),\n      debug: { http: statusCode, error: null }\n    }\n  }];\n}\n\nconst errorMsg = body.error?.message || `HTTP ${statusCode} error`;\nreturn [{\n  json: {\n    ok: true,\n    status: 'ERROR',\n    provider: 'openai',\n    slack_text: `⚠️ *OpenAI Error*\\n\\n${errorMsg}`,\n    answer: errorMsg,\n    tenant_id: data.tenant_id,\n    scope: data.scope,\n    timestamp: new Date().toISOString(),\n    debug: { http: statusCode, error: body.error || errorMsg }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1440, 420],
+      "name": "Parse OpenAI Response"
+    }
+  ],
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Select Model Policy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select Model Policy": {
+      "main": [
+        [
+          {
+            "node": "Normalize Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Input": {
+      "main": [
+        [
+          {
+            "node": "Has Validation Errors?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Validation Errors?": {
+      "main": [
+        [
+          {
+            "node": "Return ERROR",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Provider is None?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Provider is None?": {
+      "main": [
+        [
+          {
+            "node": "Return NO_BRAIN",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Provider is OpenRouter?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Provider is OpenRouter?": {
+      "main": [
+        [
+          {
+            "node": "Call OpenRouter Primary",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Call OpenAI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call OpenRouter Primary": {
+      "main": [
+        [
+          {
+            "node": "Primary Success?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Primary Success?": {
+      "main": [
+        [
+          {
+            "node": "Parse OpenRouter Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Call OpenRouter Fallback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call OpenRouter Fallback": {
+      "main": [
+        [
+          {
+            "node": "Fallback Success?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fallback Success?": {
+      "main": [
+        [
+          {
+            "node": "Parse OpenRouter Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return OpenRouter ERROR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call OpenAI": {
+      "main": [
+        [
+          {
+            "node": "Parse OpenAI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": []
+}

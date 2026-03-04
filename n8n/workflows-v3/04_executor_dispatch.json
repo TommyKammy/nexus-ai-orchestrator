@@ -9,17 +9,23 @@
       },
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [250, 300],
+      "position": [
+        250,
+        300
+      ],
       "webhookId": "executor-run",
       "name": "Webhook"
     },
     {
       "parameters": {
-        "jsCode": "const input = $input.first().json.body;\n\n// Validate required fields\nif (!input.tenant_id || !input.scope || !input.task) {\n  return [{\n    json: {\n      error: 'Missing required fields: tenant_id, scope, task'\n    }\n  }];\n}\n\n// Validate task is an object\nif (typeof input.task !== 'object' || input.task === null) {\n  return [{\n    json: {\n      error: 'task must be an object'\n    }\n  }];\n}\n\nconst requestId = input.request_id || `req-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;\n\n// Simulate executor output\nconst output = {\n  timestamp: new Date().toISOString(),\n  task: input.task,\n  status: 'received',\n  executor: 'ai-executor'\n};\n\nreturn [{\n  json: {\n    tenant_id: input.tenant_id,\n    scope: input.scope,\n    task: input.task,\n    output: output,\n    outcome: 'ok',\n    request_id: requestId\n  }\n}];"
+        "jsCode": "const rawBody = $input.first()?.json?.body;\nconst input = (rawBody && typeof rawBody === 'object' && !Array.isArray(rawBody)) ? rawBody : {};\n\nconst tenantId = String(input.tenant_id || '').trim();\nconst scope = String(input.scope || '').trim();\nconst task = input.task;\n\nif (!tenantId || !scope || !task) {\n  return [{\n    json: {\n      error: 'Missing required fields: tenant_id, scope, task'\n    }\n  }];\n}\n\nif (typeof task !== 'object' || task === null || Array.isArray(task)) {\n  return [{\n    json: {\n      error: 'task must be an object'\n    }\n  }];\n}\n\nconst requestId = String(input.request_id || '').trim() || `req-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;\n\nconst output = {\n  timestamp: new Date().toISOString(),\n  task,\n  status: 'received',\n  executor: 'ai-executor'\n};\n\nreturn [{\n  json: {\n    tenant_id: tenantId,\n    scope,\n    task,\n    output,\n    outcome: 'ok',\n    request_id: requestId\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
-      "position": [450, 300],
+      "position": [
+        450,
+        300
+      ],
       "name": "Validate and Execute"
     },
     {
@@ -28,7 +34,10 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
-      "position": [650, 200],
+      "position": [
+        650,
+        200
+      ],
       "name": "Check Validation"
     },
     {
@@ -55,7 +64,10 @@
       },
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [760, 200],
+      "position": [
+        760,
+        200
+      ],
       "name": "Validation Error?"
     },
     {
@@ -78,16 +90,22 @@
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [850, 400],
+      "position": [
+        850,
+        400
+      ],
       "name": "Evaluate Policy"
     },
     {
       "parameters": {
-        "jsCode": "const validated = $('Check Validation').first().json;\n\nif (validated.status === 'error') {\n  return [{ json: validated }];\n}\n\nconst response = $input.first().json;\nconst policy = (response && typeof response.result === 'object')\n  ? response.result\n  : {\n      policy_id: 'fallback',\n      policy_version: 'fallback',\n      decision: 'deny',\n      allow: false,\n      requires_approval: true,\n      risk_score: 0,\n      reasons: ['invalid_policy_response']\n    };\n\nif (policy.decision !== 'allow') {\n  return [{\n    json: {\n      status: 'error',\n      message: policy.decision === 'requires_approval' ? 'Policy requires approval' : 'Policy denied',\n      request_id: validated.request_id,\n      policy,\n      approval: policy.decision === 'requires_approval' ? {\n        endpoint: '/webhook/policy/approval',\n        method: 'POST'\n      } : null\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    ...validated,\n    policy\n  }\n}];"
+        "jsCode": "const validated = $('Check Validation').first().json;\n\nif (validated.status === 'error') {\n  return [{ json: validated }];\n}\n\nconst response = $input.first().json;\nconst candidatePolicy = (response && typeof response.result === 'object' && !Array.isArray(response.result))\n  ? response.result\n  : (response && typeof response === 'object' && !Array.isArray(response) ? response : null);\n\nconst fallbackPolicy = {\n  policy_id: 'fallback',\n  policy_version: 'fallback',\n  decision: 'deny',\n  allow: false,\n  requires_approval: true,\n  risk_score: 0,\n  reasons: ['invalid_policy_response']\n};\n\nconst policy = candidatePolicy || fallbackPolicy;\nconst decision = String(policy.decision || '').trim() || 'deny';\n\nif (decision !== 'allow') {\n  return [{\n    json: {\n      status: 'error',\n      message: decision === 'requires_approval' ? 'Policy requires approval' : 'Policy denied',\n      request_id: validated.request_id,\n      policy: {\n        ...policy,\n        decision\n      },\n      approval: decision === 'requires_approval' ? {\n        endpoint: '/webhook/policy/approval',\n        method: 'POST'\n      } : null\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    ...validated,\n    policy: {\n      ...policy,\n      decision\n    }\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
-      "position": [1050, 400],
+      "position": [
+        1050,
+        400
+      ],
       "name": "Check Policy"
     },
     {
@@ -114,7 +132,10 @@
       },
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1120, 260],
+      "position": [
+        1120,
+        260
+      ],
       "name": "Policy Error?"
     },
     {
@@ -123,7 +144,10 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
-      "position": [1200, 400],
+      "position": [
+        1200,
+        400
+      ],
       "name": "Build Brain Router Input"
     },
     {
@@ -150,7 +174,10 @@
       },
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1360, 400],
+      "position": [
+        1360,
+        400
+      ],
       "name": "Needs Brain Router?"
     },
     {
@@ -159,7 +186,10 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
-      "position": [1520, 300],
+      "position": [
+        1520,
+        300
+      ],
       "name": "Prepare Brain Payload"
     },
     {
@@ -170,7 +200,10 @@
       },
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1.1,
-      "position": [1680, 300],
+      "position": [
+        1680,
+        300
+      ],
       "name": "Execute Brain Router",
       "continueOnFail": true
     },
@@ -180,7 +213,10 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
-      "position": [1840, 300],
+      "position": [
+        1840,
+        300
+      ],
       "name": "Apply Brain Output"
     },
     {
@@ -189,7 +225,10 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
-      "position": [1040, 520],
+      "position": [
+        1040,
+        520
+      ],
       "name": "Finalize Success Payload"
     },
     {
@@ -199,18 +238,26 @@
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [850, 200],
+      "position": [
+        850,
+        200
+      ],
       "name": "Error Response"
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "INSERT INTO memory_episodes (tenant_id, scope, summary, outcome, started_at, ended_at, metadata_jsonb)\nVALUES ('{{ $('Finalize Success Payload').first().json.tenant_id }}', '{{ $('Finalize Success Payload').first().json.scope }}', 'executor task executed', '{{ $('Finalize Success Payload').first().json.outcome }}', NOW(), NOW(), '{{ JSON.stringify($('Finalize Success Payload').first().json.output).replace(/'/g, \"''\") }}'::jsonb);",
-        "additionalFields": {}
+        "query": "INSERT INTO memory_episodes (\n  tenant_id,\n  scope,\n  summary,\n  outcome,\n  started_at,\n  ended_at,\n  metadata_jsonb\n)\nVALUES (\n  $1,\n  $2,\n  'executor task executed',\n  $3,\n  NOW(),\n  NOW(),\n  $4::jsonb\n);",
+        "additionalFields": {
+          "queryReplacement": "={{ [\n  $('Finalize Success Payload').first().json.tenant_id,\n  $('Finalize Success Payload').first().json.scope,\n  $('Finalize Success Payload').first().json.outcome,\n  JSON.stringify($('Finalize Success Payload').first().json.output || {})\n] }}"
+        }
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
-      "position": [1250, 400],
+      "position": [
+        1250,
+        400
+      ],
       "name": "Insert Episode",
       "credentials": {
         "postgres": {
@@ -222,12 +269,17 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "INSERT INTO audit_events (actor, action, target, decision, payload_jsonb, created_at)\nVALUES ('workflow:executor_dispatch', 'executor_run', '{{ $('Finalize Success Payload').first().json.scope }}', '{{ $('Finalize Success Payload').first().json.policy?.decision || \"allowed\" }}', '{{ JSON.stringify({ request_id: $('Finalize Success Payload').first().json.request_id || \"\", policy: $('Finalize Success Payload').first().json.policy || {} }).replace(/'/g, \"''\") }}'::jsonb, NOW());",
-        "additionalFields": {}
+        "query": "INSERT INTO audit_events (\n  actor,\n  action,\n  target,\n  decision,\n  payload_jsonb,\n  request_id,\n  policy_id,\n  policy_version,\n  policy_reason,\n  risk_score,\n  created_at\n)\nVALUES (\n  'workflow:executor_dispatch',\n  'executor_run',\n  $1,\n  $2,\n  $3::jsonb,\n  $4,\n  $5,\n  $6,\n  $7,\n  $8,\n  NOW()\n);",
+        "additionalFields": {
+          "queryReplacement": "={{ [\n  $('Finalize Success Payload').first().json.scope,\n  $('Finalize Success Payload').first().json.policy?.decision || 'allowed',\n  JSON.stringify({\n    request_id: $('Finalize Success Payload').first().json.request_id || '',\n    policy: $('Finalize Success Payload').first().json.policy || {}\n  }),\n  $('Finalize Success Payload').first().json.request_id || null,\n  $('Finalize Success Payload').first().json.policy?.policy_id || null,\n  $('Finalize Success Payload').first().json.policy?.policy_version || null,\n  Array.isArray($('Finalize Success Payload').first().json.policy?.reasons)\n    ? $('Finalize Success Payload').first().json.policy.reasons.join('; ')\n    : null,\n  Number.isFinite(Number($('Finalize Success Payload').first().json.policy?.risk_score))\n    ? Math.round(Number($('Finalize Success Payload').first().json.policy.risk_score))\n    : null\n] }}"
+        }
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
-      "position": [1450, 400],
+      "position": [
+        1450,
+        400
+      ],
       "name": "Insert Audit",
       "credentials": {
         "postgres": {
@@ -239,11 +291,14 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ ({ status: 'success', request_id: $('Finalize Success Payload').first().json.request_id || null, outcome: $('Finalize Success Payload').first().json.outcome, output: $('Finalize Success Payload').first().json.output }) }}"
+        "responseBody": "={{ ({\n  status: 'success',\n  request_id: $('Finalize Success Payload').first().json.request_id || null,\n  outcome: $('Finalize Success Payload').first().json.outcome,\n  output: $('Finalize Success Payload').first().json.output,\n  policy: $('Finalize Success Payload').first().json.policy || null\n}) }}"
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [1650, 400],
+      "position": [
+        1650,
+        400
+      ],
       "name": "Success Response"
     }
   ],

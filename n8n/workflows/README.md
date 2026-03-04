@@ -79,7 +79,7 @@ This directory contains 4 workflow JSON files for the AI orchestration system.
 ---
 
 ### 04_executor_dispatch.json
-**Purpose:** Execute tasks and capture results
+**Purpose:** Orchestrate policy evaluation + executor dispatch in one webhook path
 
 **Webhook Path:** `POST /webhook/executor/run`
 
@@ -92,9 +92,13 @@ This directory contains 4 workflow JSON files for the AI orchestration system.
 }
 ```
 
-**Behavior:** Validates input and stores episode record
+**Behavior:**
+- Validates request payload
+- Evaluates `executor.execute` policy via OPA
+- Returns deny/approval-required responses when policy blocks execution
+- Proceeds to execution flow and stores episode/audit records when policy allows
 
-**Output:** Record stored in `memory_episodes` and `audit_events` tables
+**Output:** Structured success/error response with `request_id`, execution output, and policy metadata
 
 ---
 

@@ -81,6 +81,23 @@ def sanitize_error(error: str) -> str:
 
 class ExecutorHandler(BaseHTTPRequestHandler):
     """HTTP request handler for executor API."""
+
+    GET_ROUTES = {
+        "/": "_handle_get_root",
+        "/health": "_handle_get_health",
+        "/capabilities": "_handle_get_capabilities",
+        "/templates": "_handle_get_templates",
+        "/sessions": "_handle_get_sessions",
+        "/metrics": "_handle_get_metrics",
+        "/metrics/prometheus": "_handle_get_metrics_prometheus",
+    }
+
+    POST_ROUTES = {
+        "/execute": "_handle_execute",
+        "/session/create": "_handle_create_session",
+        "/session/destroy": "_handle_destroy_session",
+        "/session/execute": "_handle_session_execute",
+    }
     
     def log_message(self, format, *args):
         """Override to use our logger."""
@@ -199,65 +216,8 @@ class ExecutorHandler(BaseHTTPRequestHandler):
         
         parsed = urlparse(self.path)
         path = parsed.path
-        
-        if path == '/health':
-            self._send_json_response({
-                "status": "healthy",
-                "service": "executor-api",
-                "version": "2.0.0"
-            })
 
-        elif path == '/capabilities':
-            self._send_json_response({
-                "status": "success",
-                "capabilities": {
-                    "interactive_execution": False,
-                    "snapshot_restore": False,
-                    "pause_resume": False,
-                    "supported_languages": [
-                        "python",
-                        "javascript",
-                        "node",
-                        "r",
-                        "bash",
-                        "sh",
-                        "go",
-                        "rust",
-                        "java",
-                        "cpp"
-                    ]
-                }
-            })
-        
-        elif path == '/templates':
-            templates = template_manager.list_templates()
-            self._send_json_response({
-                "status": "success",
-                "templates": templates
-            })
-        
-        elif path == '/sessions':
-            sessions = session_manager.list_sessions()
-            self._send_json_response({
-                "status": "success",
-                "sessions": sessions
-            })
-        
-        elif path == '/metrics':
-            metrics = session_manager.get_metrics()
-            self._send_json_response({
-                "status": "success",
-                "metrics": {
-                    **metrics,
-                    "policy": POLICY_METRICS
-                }
-            })
-
-        elif path == '/metrics/prometheus':
-            self._send_text_response(self._prometheus_metrics())
-        
-        else:
-            self._send_error("Not found", 404)
+        self._dispatch_get(path)
     
     def do_POST(self):
         """Handle POST requests."""
@@ -273,19 +233,91 @@ class ExecutorHandler(BaseHTTPRequestHandler):
         body = self._read_body()
         
         try:
-            if path == '/execute':
-                self._handle_execute(body)
-            elif path == '/session/create':
-                self._handle_create_session(body)
-            elif path == '/session/destroy':
-                self._handle_destroy_session(body)
-            elif path == '/session/execute':
-                self._handle_session_execute(body)
-            else:
-                self._send_error("Not found", 404)
+            self._dispatch_post(path, body)
         except Exception as e:
             logger.error(f"Request failed: {e}")
             self._send_error(f"Internal error: {sanitize_error(str(e))}", 500)
+
+    def _dispatch_get(self, path: str):
+        handler_name = self.GET_ROUTES.get(path)
+        if not handler_name:
+            self._send_error("Not found", 404)
+            return
+        getattr(self, handler_name)()
+
+    def _dispatch_post(self, path: str, body: Dict[str, Any]):
+        handler_name = self.POST_ROUTES.get(path)
+        if not handler_name:
+            self._send_error("Not found", 404)
+            return
+        getattr(self, handler_name)(body)
+
+    def _handle_get_root(self):
+        self._send_json_response({
+            "status": "success",
+            "service": "executor-api",
+            "version": "2.0.0",
+            "routes": {
+                "get": sorted(self.GET_ROUTES.keys()),
+                "post": sorted(self.POST_ROUTES.keys()),
+            },
+        })
+
+    def _handle_get_health(self):
+        self._send_json_response({
+            "status": "healthy",
+            "service": "executor-api",
+            "version": "2.0.0"
+        })
+
+    def _handle_get_capabilities(self):
+        self._send_json_response({
+            "status": "success",
+            "capabilities": {
+                "interactive_execution": False,
+                "snapshot_restore": False,
+                "pause_resume": False,
+                "supported_languages": [
+                    "python",
+                    "javascript",
+                    "node",
+                    "r",
+                    "bash",
+                    "sh",
+                    "go",
+                    "rust",
+                    "java",
+                    "cpp"
+                ]
+            }
+        })
+
+    def _handle_get_templates(self):
+        templates = template_manager.list_templates()
+        self._send_json_response({
+            "status": "success",
+            "templates": templates
+        })
+
+    def _handle_get_sessions(self):
+        sessions = session_manager.list_sessions()
+        self._send_json_response({
+            "status": "success",
+            "sessions": sessions
+        })
+
+    def _handle_get_metrics(self):
+        metrics = session_manager.get_metrics()
+        self._send_json_response({
+            "status": "success",
+            "metrics": {
+                **metrics,
+                "policy": POLICY_METRICS
+            }
+        })
+
+    def _handle_get_metrics_prometheus(self):
+        self._send_text_response(self._prometheus_metrics())
 
     def _evaluate_policy(
         self,

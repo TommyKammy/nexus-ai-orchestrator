@@ -46,6 +46,7 @@ POLICY_METRICS = {
     "requires_approval": 0,
     "errors": 0,
     "latency_ms_sum": 0.0,
+    "latency_ms_count": 0,
 }
 
 
@@ -160,7 +161,12 @@ class ExecutorHandler(BaseHTTPRequestHandler):
 
     def _prometheus_metrics(self) -> str:
         """Build Prometheus exposition text."""
+        latency_count = POLICY_METRICS["latency_ms_count"]
+        latency_avg = POLICY_METRICS["latency_ms_sum"] / latency_count if latency_count else 0.0
         lines = [
+            "# HELP executor_policy_eval_total Total number of policy evaluations",
+            "# TYPE executor_policy_eval_total counter",
+            f'executor_policy_eval_total {POLICY_METRICS["total"]}',
             "# HELP executor_policy_decisions_total Total number of policy decisions",
             "# TYPE executor_policy_decisions_total counter",
             f'executor_policy_decisions_total{{decision="allow"}} {POLICY_METRICS["allow"]}',
@@ -172,6 +178,12 @@ class ExecutorHandler(BaseHTTPRequestHandler):
             "# HELP executor_policy_eval_latency_ms_sum Sum of policy evaluation latency in ms",
             "# TYPE executor_policy_eval_latency_ms_sum counter",
             f'executor_policy_eval_latency_ms_sum {POLICY_METRICS["latency_ms_sum"]:.3f}',
+            "# HELP executor_policy_eval_latency_ms_count Number of policy evaluations with latency samples",
+            "# TYPE executor_policy_eval_latency_ms_count counter",
+            f"executor_policy_eval_latency_ms_count {latency_count}",
+            "# HELP executor_policy_eval_latency_ms_avg Average policy evaluation latency in ms",
+            "# TYPE executor_policy_eval_latency_ms_avg gauge",
+            f"executor_policy_eval_latency_ms_avg {latency_avg:.3f}",
         ]
         return "\n".join(lines) + "\n"
     
@@ -337,6 +349,7 @@ class ExecutorHandler(BaseHTTPRequestHandler):
         elapsed_ms = (time.monotonic() - started) * 1000.0
         POLICY_METRICS["total"] += 1
         POLICY_METRICS["latency_ms_sum"] += elapsed_ms
+        POLICY_METRICS["latency_ms_count"] += 1
         decision = str(result.get("decision", "deny"))
         if decision in ("allow", "deny", "requires_approval"):
             POLICY_METRICS[decision] += 1

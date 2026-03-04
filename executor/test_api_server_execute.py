@@ -66,6 +66,24 @@ def _post_json(port: int, path: str, payload: dict):
     return response.status, json.loads(body)
 
 
+def _get_json(port: int, path: str):
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    conn.request("GET", path)
+    response = conn.getresponse()
+    body = response.read().decode("utf-8")
+    conn.close()
+    return response.status, json.loads(body)
+
+
+def _get_text(port: int, path: str):
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    conn.request("GET", path)
+    response = conn.getresponse()
+    body = response.read().decode("utf-8")
+    conn.close()
+    return response.status, body
+
+
 def test_execute_returns_structured_output():
     with patch("executor.api_server.API_KEY", None), patch(
         "executor.api_server.template_manager.get_sandbox_kwargs", return_value={}
@@ -312,3 +330,98 @@ def test_execute_policy_evaluated_before_sandbox_run():
     assert policy_input["resource"]["task_type"] == "code_execution"
     assert events.index("evaluate") < events.index("sandbox_enter")
     assert events.index("evaluate") < events.index("sandbox_run")
+
+
+def test_policy_metrics_exposed_for_decisions_errors_and_latency():
+    policy_responses = [
+        {
+            "decision": "allow",
+            "allow": True,
+            "requires_approval": False,
+            "risk_score": 0,
+            "reasons": [],
+            "error": None,
+        },
+        {
+            "decision": "deny",
+            "allow": False,
+            "requires_approval": False,
+            "risk_score": 90,
+            "reasons": ["task_type_not_allowed"],
+            "error": None,
+        },
+        {
+            "decision": "allow",
+            "allow": True,
+            "requires_approval": False,
+            "risk_score": 0,
+            "reasons": ["policy_unavailable"],
+            "error": "opa timeout",
+        },
+    ]
+    baseline_metrics = {
+        "total": 0,
+        "allow": 0,
+        "deny": 0,
+        "requires_approval": 0,
+        "errors": 0,
+        "latency_ms_sum": 0.0,
+        "latency_ms_count": 0,
+    }
+
+    with patch("executor.api_server.API_KEY", None), patch(
+        "executor.api_server.template_manager.get_sandbox_kwargs", return_value={}
+    ), patch("executor.api_server.POLICY_METRICS", baseline_metrics), patch(
+        "executor.api_server.policy_client.evaluate", side_effect=policy_responses
+    ), patch(
+        "executor.api_server.policy_client.enforce", side_effect=lambda result: bool(result.get("allow"))
+    ), patch("executor.api_server.CodeSandbox", _FakeSandbox):
+        server, thread = _start_server()
+        try:
+            allow_status, allow_payload = _post_json(
+                server.server_port,
+                "/execute",
+                {"tenant_id": "t1", "scope": "analysis", "code": "print('ok')", "language": "python"},
+            )
+            deny_status, deny_payload = _post_json(
+                server.server_port,
+                "/execute",
+                {"tenant_id": "t1", "scope": "analysis", "code": "print('blocked')", "language": "python"},
+            )
+            fallback_status, fallback_payload = _post_json(
+                server.server_port,
+                "/execute",
+                {"tenant_id": "t1", "scope": "analysis", "code": "print('fallback')", "language": "python"},
+            )
+            metrics_status, metrics_payload = _get_json(server.server_port, "/metrics")
+            prom_status, prom_body = _get_text(server.server_port, "/metrics/prometheus")
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    assert allow_status == 200
+    assert allow_payload["status"] == "success"
+    assert deny_status == 403
+    assert deny_payload["status"] == "error"
+    assert fallback_status == 200
+    assert fallback_payload["status"] == "success"
+    assert fallback_payload["policy"]["error"] == "opa timeout"
+
+    assert metrics_status == 200
+    policy_metrics = metrics_payload["metrics"]["policy"]
+    assert policy_metrics["total"] == 3
+    assert policy_metrics["allow"] == 2
+    assert policy_metrics["deny"] == 1
+    assert policy_metrics["requires_approval"] == 0
+    assert policy_metrics["errors"] == 1
+    assert policy_metrics["latency_ms_count"] == 3
+    assert policy_metrics["latency_ms_sum"] > 0
+
+    assert prom_status == 200
+    assert "executor_policy_eval_total 3" in prom_body
+    assert 'executor_policy_decisions_total{decision="allow"} 2' in prom_body
+    assert 'executor_policy_decisions_total{decision="deny"} 1' in prom_body
+    assert "executor_policy_eval_errors_total 1" in prom_body
+    assert "executor_policy_eval_latency_ms_count 3" in prom_body
+    assert "executor_policy_eval_latency_ms_avg " in prom_body

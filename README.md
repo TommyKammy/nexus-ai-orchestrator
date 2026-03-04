@@ -425,6 +425,12 @@ python3 scripts/validate_slack_workflows.py
 
 # Test imports
 bash scripts/ci/n8n_import_test.sh
+
+# One-command compose core journey (ingest -> search -> execute)
+pnpm e2e:compose-core
+
+# The command imports run-scoped CI-safe copies of core workflows
+# and validates successful executions plus DB side effects.
 \`\`\`
 
 ## Known Issues

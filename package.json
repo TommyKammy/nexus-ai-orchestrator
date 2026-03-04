@@ -7,6 +7,7 @@
     "typecheck": "bash scripts/ci/typecheck.sh",
     "test": "bash scripts/ci/test.sh",
     "build": "bash scripts/ci/build.sh",
-    "e2e": "bash scripts/ci/e2e.sh"
+    "e2e": "bash scripts/ci/e2e.sh",
+    "e2e:compose-core": "bash scripts/ci/compose_core_journey.sh"
   }
 }

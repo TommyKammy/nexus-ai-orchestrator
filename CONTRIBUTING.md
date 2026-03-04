@@ -12,13 +12,19 @@ Direct pushes to `main` are not allowed.
 
 ## Required verification before merge
 
+Use the same checks that currently run in GitHub Actions:
+
 ```bash
-pnpm -r --if-present lint
-pnpm -r --if-present typecheck
-pnpm -r --if-present test
-pnpm -r --if-present build
-pnpm e2e
+docker run --rm -v "$PWD/policy/opa:/policy" openpolicyagent/opa:0.68.0 \
+  check /policy/authz.rego /policy/risk.rego
+docker run --rm -v "$PWD/policy/opa:/policy" openpolicyagent/opa:0.68.0 \
+  eval --data /policy --input /policy/example_input.json "data.ai.policy.result"
+python3 -m py_compile executor/api_server.py executor/policy_client.py executor/run_task.py
+python3 scripts/validate_slack_workflows.py n8n/workflows-v3
+bash scripts/ci/n8n_import_test.sh
 ```
+
+Note: root-level `pnpm e2e` and `pnpm -r --if-present <script>` are not valid in this repository until a root workspace/package manifest is introduced.
 
 ## Security and scope expectations
 

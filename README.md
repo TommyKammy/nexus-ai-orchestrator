@@ -334,6 +334,7 @@ OPENAI_API_KEY=your_openai_key
 `N8N_WEBHOOK_API_KEY` is enforced by Caddy for webhook routes by default:
 - missing/invalid key returns `401 Unauthorized`
 - `/webhook/slack-command` is explicitly exempt and protected separately via `X-Internal-Auth`
+- internal-only service prefixes (`/internal/*`, `/executor/*`, `/opa/*`, `/postgres/*`, `/redis/*`) are explicitly denied at the edge (`404`)
 
 ## PostgreSQL 18 Upgrade
 

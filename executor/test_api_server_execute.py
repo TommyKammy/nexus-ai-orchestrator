@@ -375,6 +375,9 @@ def test_policy_metrics_exposed_for_decisions_errors_and_latency():
         "executor.api_server.policy_client.evaluate", side_effect=policy_responses
     ), patch(
         "executor.api_server.policy_client.enforce", side_effect=lambda result: bool(result.get("allow"))
+    ), patch(
+        "executor.api_server.time.monotonic",
+        side_effect=[1.0, 1.01, 2.0, 2.02, 3.0, 3.03],
     ), patch("executor.api_server.CodeSandbox", _FakeSandbox):
         server, thread = _start_server()
         try:
@@ -416,12 +419,14 @@ def test_policy_metrics_exposed_for_decisions_errors_and_latency():
     assert policy_metrics["requires_approval"] == 0
     assert policy_metrics["errors"] == 1
     assert policy_metrics["latency_ms_count"] == 3
-    assert policy_metrics["latency_ms_sum"] > 0
+    assert round(policy_metrics["latency_ms_sum"], 3) == 60.0
 
     assert prom_status == 200
     assert "executor_policy_eval_total 3" in prom_body
     assert 'executor_policy_decisions_total{decision="allow"} 2' in prom_body
     assert 'executor_policy_decisions_total{decision="deny"} 1' in prom_body
     assert "executor_policy_eval_errors_total 1" in prom_body
+    assert "executor_policy_eval_latency_ms_sum 60.000" in prom_body
     assert "executor_policy_eval_latency_ms_count 3" in prom_body
+    assert "executor_policy_eval_latency_ms_avg 20.000" in prom_body
     assert "executor_policy_eval_latency_ms_avg " in prom_body

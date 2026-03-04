@@ -228,7 +228,7 @@ curl http://localhost:8080/metrics/prometheus
 - **0 Critical** vulnerabilities found
 - **0 High** severity issues
 - Comprehensive security documentation in [SECURITY.md](SECURITY.md)
-- Full audit report in [SECURITY_AUDIT_REPORT.md](SECURITY_AUDIT_REPORT.md)
+- Full audit report in [docs/reports/SECURITY_AUDIT_REPORT.md](docs/reports/SECURITY_AUDIT_REPORT.md)
 
 ### Key Security Features
 
@@ -280,6 +280,9 @@ See [SECURITY.md](SECURITY.md) for detailed security documentation.
 │   └── README.md              # Executor documentation
 ├── n8n/
 │   └── workflows/             # n8n workflow definitions
+├── docs/
+│   ├── reports/               # implementation and verification reports
+│   └── ...                    # operations and troubleshooting docs
 ├── scripts/                   # Utility scripts
 ├── SECURITY.md                # Security documentation
 └── README.md                  # This file

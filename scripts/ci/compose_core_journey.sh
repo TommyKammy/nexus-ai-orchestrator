@@ -31,8 +31,8 @@ require_cmd jq
 
 POSTGRES_PASSWORD_VAL="$POSTGRES_PASSWORD"
 RUN_ID="$(date +%s)"
-CI_TENANT_ID="core-e2e"
-CI_SCOPE="journey:user-42"
+CI_TENANT_ID="core-e2e-${RUN_ID}"
+CI_SCOPE="journey:user-42-${RUN_ID}"
 WF_INGEST_NAME="CI Core Journey 01 Memory Ingest ${RUN_ID}"
 WF_SEARCH_NAME="CI Core Journey 02 Vector Search ${RUN_ID}"
 WF_EXEC_NAME="CI Core Journey 04 Executor Dispatch ${RUN_ID}"
@@ -267,9 +267,30 @@ post_webhook() {
 }
 
 echo "[7/8] Running core journey webhooks..."
-post_webhook "$WF_INGEST_PATH" '{"tenant_id":"core-e2e","scope":"journey:user-42","text":"User prefers PDF reports","facts":[{"subject":"user:42","predicate":"prefers","object":"PDF","confidence":0.95}],"tags":["preference"],"source":"compose_e2e"}'
-post_webhook "$WF_SEARCH_PATH" '{"tenant_id":"core-e2e","scope":"journey:user-42","query":"PDF","k":3}'
-post_webhook "$WF_EXEC_PATH" '{"tenant_id":"core-e2e","scope":"journey:user-42","task":{"type":"ping","message":"hello"}}'
+INGEST_PAYLOAD="$(
+  jq -cn \
+    --arg tenant "$CI_TENANT_ID" \
+    --arg scope "$CI_SCOPE" \
+    --arg text "User prefers PDF reports" \
+    --arg source "compose_e2e" \
+    '{"tenant_id":$tenant,"scope":$scope,"text":$text,"facts":[{"subject":"user:42","predicate":"prefers","object":"PDF","confidence":0.95}],"tags":["preference"],"source":$source}'
+)"
+SEARCH_PAYLOAD="$(
+  jq -cn \
+    --arg tenant "$CI_TENANT_ID" \
+    --arg scope "$CI_SCOPE" \
+    '{"tenant_id":$tenant,"scope":$scope,"query":"PDF","k":3}'
+)"
+EXEC_PAYLOAD="$(
+  jq -cn \
+    --arg tenant "$CI_TENANT_ID" \
+    --arg scope "$CI_SCOPE" \
+    '{"tenant_id":$tenant,"scope":$scope,"task":{"type":"ping","message":"hello"}}'
+)"
+
+post_webhook "$WF_INGEST_PATH" "$INGEST_PAYLOAD"
+post_webhook "$WF_SEARCH_PATH" "$SEARCH_PAYLOAD"
+post_webhook "$WF_EXEC_PATH" "$EXEC_PAYLOAD"
 
 wait_for_success() {
   local workflow_name="$1"

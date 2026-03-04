@@ -121,8 +121,6 @@ def test_session_create_policy_denied_returns_403_without_creating_session():
         with patch("executor.api_server.API_KEY", None), patch(
             "executor.api_server.session_manager", manager
         ), patch(
-            "executor.session.CodeSandbox", _FakeSandbox
-        ), patch(
             "executor.api_server.policy_client.evaluate",
             return_value={
                 "decision": "deny",

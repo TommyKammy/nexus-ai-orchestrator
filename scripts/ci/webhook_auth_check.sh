@@ -33,6 +33,22 @@ require_pattern "Unauthorized: Invalid or missing API key" "$CADDYFILE"
 reject_pattern 'X-API-Key\s+[0-9a-fA-F]{32,}' "$CADDYFILE"
 
 # Caddy service must receive webhook auth key from environment.
-require_pattern "N8N_WEBHOOK_API_KEY:" "$COMPOSE_FILE"
+caddy_block="$(
+  awk '
+    /^[[:space:]]{2}caddy:$/ { in_caddy=1; print; next }
+    in_caddy && /^[[:space:]]{2}[a-zA-Z0-9_.-]+:$/ { in_caddy=0 }
+    in_caddy { print }
+  ' "$COMPOSE_FILE"
+)"
+
+if [[ -z "$caddy_block" ]]; then
+  echo "Failed to parse caddy service block from ${COMPOSE_FILE}" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'N8N_WEBHOOK_API_KEY: ${N8N_WEBHOOK_API_KEY}' <<<"$caddy_block"; then
+  echo "Caddy service must include N8N_WEBHOOK_API_KEY env wiring in ${COMPOSE_FILE}" >&2
+  exit 1
+fi
 
 echo "Webhook auth configuration checks passed."

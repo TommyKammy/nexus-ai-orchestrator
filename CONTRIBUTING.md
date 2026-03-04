@@ -32,3 +32,9 @@ Note: root-level `pnpm e2e` and `pnpm -r --if-present <script>` are not valid in
 - Do not commit secrets or credentials.
 - Keep changes tightly scoped to the task.
 - Document risks and rollback in each PR description.
+
+Run a quick secret scan before opening a PR:
+
+```bash
+grep -r "CHANGE_ME\\|password\\|secret" . --include="*.yml" --include="*.yaml" --include="*.py" --include="*.ts" --include="*.js"
+```

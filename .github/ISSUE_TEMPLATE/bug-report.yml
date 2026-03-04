@@ -1,8 +1,6 @@
 name: Bug report
 description: Report a defect or regression
 title: "bug: <short summary>"
-labels:
-  - type-test
 body:
   - type: textarea
     id: summary

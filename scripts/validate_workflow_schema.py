@@ -153,7 +153,7 @@ def validate_workflow(filepath: Path) -> list[str]:
                     )
 
                 index = link.get("index")
-                if not isinstance(index, int) or index < 0:
+                if not isinstance(index, int) or isinstance(index, bool) or index < 0:
                     errors.append(
                         _err(
                             filepath,

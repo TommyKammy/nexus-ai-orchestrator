@@ -18,7 +18,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const input = $input.first().json.body || {};\n\nconst tenantId = String(input.tenant_id || '').trim();\nconst scope = String(input.scope || '').trim();\nconst query = String(input.query || '').trim();\nconst requestedK = Number(input.k);\nconst k = Number.isFinite(requestedK) && requestedK > 0\n  ? Math.min(Math.floor(requestedK), 50)\n  : 5;\n\nif (!tenantId || !scope || !query) {\n  return [{\n    json: {\n      error: 'Missing required fields: tenant_id, scope, query'\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    tenant_id: tenantId,\n    scope,\n    query,\n    k\n  }\n}];"
+        "jsCode": "const input = $input.first().json.body || {};\n\nconst tenantId = String(input.tenant_id || '').trim();\nconst scope = String(input.scope || '').trim();\nconst query = String(input.query || '').trim();\nconst requestedK = Number(input.k);\nconst k = Number.isFinite(requestedK) && requestedK > 0\n  ? Math.max(1, Math.min(Math.floor(requestedK), 50))\n  : 5;\n\nif (!tenantId || !scope || !query) {\n  return [{\n    json: {\n      error: 'Missing required fields: tenant_id, scope, query'\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    tenant_id: tenantId,\n    scope,\n    query,\n    k\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,

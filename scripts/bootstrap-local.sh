@@ -12,6 +12,7 @@ ensure_env_file() {
   fi
 
   cp "$ROOT_DIR/.env.example" "$ENV_FILE"
+  chmod 600 "$ENV_FILE"
   cat <<EOF
 [bootstrap] Created $ENV_FILE from .env.example.
 [bootstrap] Replace CHANGE_ME values before exposing this stack beyond local development.
@@ -75,11 +76,11 @@ run_with_retry() {
 
 run_health_checks() {
   echo "[bootstrap] Running service health checks..."
-  run_with_retry "postgres" docker exec ai-postgres pg_isready -U ai_user -d ai_memory >/dev/null
+  run_with_retry "postgres" bash -lc "docker exec ai-postgres pg_isready -U ai_user -d ai_memory >/dev/null"
   run_with_retry "redis" bash -lc "docker exec ai-redis redis-cli ping | grep -q '^PONG$'"
-  run_with_retry "policy-bundle-server" curl -fsS http://127.0.0.1:8088/healthz >/dev/null
-  run_with_retry "opa" curl -fsS http://127.0.0.1:8181/health >/dev/null
-  run_with_retry "caddy-config" docker exec ai-caddy caddy validate --config /etc/caddy/Caddyfile >/dev/null
+  run_with_retry "policy-bundle-server" bash -lc "curl -fsS http://127.0.0.1:8088/healthz >/dev/null"
+  run_with_retry "opa" bash -lc "curl -fsS http://127.0.0.1:8181/health >/dev/null"
+  run_with_retry "caddy-config" bash -lc "docker exec ai-caddy caddy validate --config /etc/caddy/Caddyfile >/dev/null"
   echo "[bootstrap] Health checks passed."
 }
 

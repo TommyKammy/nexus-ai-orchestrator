@@ -6,6 +6,7 @@ This guide provides a deterministic local startup flow for the full stack.
 
 - Docker Engine with Compose plugin
 - Linux/macOS shell environment
+- `curl` (required for bootstrap health probes)
 - Open ports `80`, `443`, `5432`, `6379`, `8088`, `8181`
 
 ## Bootstrap Command

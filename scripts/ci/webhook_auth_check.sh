@@ -22,15 +22,15 @@ reject_pattern() {
   fi
 }
 
-require_pattern "handle /webhook/chat/router-v1" "$CADDYFILE"
-require_pattern "header_up X-API-Key {env.N8N_WEBHOOK_API_KEY}" "$CADDYFILE"
 require_pattern "path /webhook/*" "$CADDYFILE"
 require_pattern "not header X-API-Key {env.N8N_WEBHOOK_API_KEY}" "$CADDYFILE"
 require_pattern "respond @unauthorized 401" "$CADDYFILE"
 require_pattern "Unauthorized: Invalid or missing API key" "$CADDYFILE"
 
 # Reject hex-like hardcoded key literals in X-API-Key checks and injection.
-reject_pattern 'X-API-Key\s+[0-9a-fA-F]{32,}' "$CADDYFILE"
+reject_pattern 'X-API-Key[[:space:]]+[0-9a-fA-F]{32,}' "$CADDYFILE"
+# Reject internal key-injection route for externally reachable webhook path.
+reject_pattern 'handle[[:space:]]+/webhook/chat/router-v1' "$CADDYFILE"
 
 # Caddy service must receive webhook auth key from environment.
 caddy_block="$(
@@ -46,7 +46,7 @@ if [[ -z "$caddy_block" ]]; then
   exit 1
 fi
 
-if ! grep -Fq 'N8N_WEBHOOK_API_KEY: ${N8N_WEBHOOK_API_KEY}' <<<"$caddy_block"; then
+if ! grep -Fq 'N8N_WEBHOOK_API_KEY: ${N8N_WEBHOOK_API_KEY:?set N8N_WEBHOOK_API_KEY}' <<<"$caddy_block"; then
   echo "Caddy service must include N8N_WEBHOOK_API_KEY env wiring in ${COMPOSE_FILE}" >&2
   exit 1
 fi

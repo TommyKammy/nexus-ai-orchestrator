@@ -331,9 +331,9 @@ KIMI_API_KEY=your_kimi_key
 OPENAI_API_KEY=your_openai_key
 \`\`\`
 
-`N8N_WEBHOOK_API_KEY` is enforced by Caddy for `/webhook/*` routes:
+`N8N_WEBHOOK_API_KEY` is enforced by Caddy for webhook routes by default:
 - missing/invalid key returns `401 Unauthorized`
-- the same key is injected only for internal router path `/webhook/chat/router-v1`
+- `/webhook/slack-command` is explicitly exempt and protected separately via `X-Internal-Auth`
 
 ## PostgreSQL 18 Upgrade
 

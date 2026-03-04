@@ -521,10 +521,18 @@ class ExecutorHandler(BaseHTTPRequestHandler):
         if success:
             self._send_json_response({
                 "status": "success",
-                "message": f"Session {session_id} destroyed"
+                "message": f"Session {session_id} destroyed",
+                "request_id": self.request_id,
             })
         else:
-            self._send_error(f"Session {session_id} not found", 404)
+            self._send_json_response(
+                {
+                    "status": "error",
+                    "error": f"Session {session_id} not found",
+                    "request_id": self.request_id,
+                },
+                404,
+            )
     
     def _handle_session_execute(self, body: Dict[str, Any]):
         """Handle execution in existing session."""
@@ -571,6 +579,9 @@ class ExecutorHandler(BaseHTTPRequestHandler):
         )
         result["request_id"] = self.request_id
         result["policy"] = policy_result
+        if result.get("status") == "error" and "not found or expired" in str(result.get("error", "")).lower():
+            self._send_json_response(result, 404)
+            return
         self._send_json_response(result)
 
 

@@ -420,6 +420,7 @@ Run locally:
 
 \`\`\`bash
 # Validate workflows
+python3 scripts/validate_workflow_schema.py n8n/workflows n8n/workflows-v3
 python3 scripts/validate_slack_workflows.py
 
 # Test imports

@@ -16,11 +16,19 @@ CREATE TABLE IF NOT EXISTS memory_vectors (
 );
 
 ALTER TABLE memory_vectors
+  ADD COLUMN IF NOT EXISTS tenant_id TEXT,
   ADD COLUMN IF NOT EXISTS tags JSONB NOT NULL DEFAULT '[]'::jsonb,
   ADD COLUMN IF NOT EXISTS source TEXT,
   ADD COLUMN IF NOT EXISTS content_hash TEXT,
   ADD COLUMN IF NOT EXISTS metadata_jsonb JSONB NOT NULL DEFAULT '{}'::jsonb,
   ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+UPDATE memory_vectors
+SET tenant_id = 'default'
+WHERE tenant_id IS NULL OR tenant_id = '';
+
+ALTER TABLE memory_vectors
+  ALTER COLUMN tenant_id SET NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_memory_vectors_tenant_scope
   ON memory_vectors (tenant_id, scope);

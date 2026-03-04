@@ -215,3 +215,17 @@ def test_session_manager_state_store_errors_do_not_break_lifecycle():
             assert manager.metrics["errors"] >= 2
     finally:
         manager.stop()
+
+
+def test_session_manager_state_store_none_disables_env_auto_init():
+    with patch.dict("os.environ", {"SESSION_STATE_REDIS_URL": "redis://127.0.0.1:6379/0"}):
+        manager = SessionManager(
+            default_ttl=300,
+            max_sessions=5,
+            enable_cleanup_thread=False,
+            state_store=None,
+        )
+    try:
+        assert manager._state_store is None
+    finally:
+        manager.stop()

@@ -21,6 +21,7 @@ from executor.sandbox import CodeSandbox
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+_AUTO_STATE_STORE = object()
 
 
 class RedisSessionStateStore:
@@ -109,7 +110,7 @@ class SessionManager:
         max_sessions: int = 10,
         cleanup_interval: int = 60,  # 1 minute
         enable_cleanup_thread: bool = True,
-        state_store: Optional[Any] = None,
+        state_store: Any = _AUTO_STATE_STORE,
     ):
         """
         Initialize session manager.
@@ -139,7 +140,10 @@ class SessionManager:
             "sessions_expired": 0,
             "errors": 0
         }
-        self._state_store = state_store if state_store is not None else self._create_state_store_from_env()
+        if state_store is _AUTO_STATE_STORE:
+            self._state_store = self._create_state_store_from_env()
+        else:
+            self._state_store = state_store
         
         if enable_cleanup_thread:
             self._start_cleanup_thread()
@@ -187,17 +191,13 @@ class SessionManager:
             "use_count": session.use_count,
         }
 
-    def _save_session_state(self, session: Session):
+    def _save_session_state(self, session_id: str, payload: Dict[str, Any], ttl: int):
         if not self._state_store:
             return
         try:
-            self._state_store.save(
-                session.id,
-                self._session_state_payload(session),
-                session.ttl,
-            )
+            self._state_store.save(session_id, payload, ttl)
         except Exception as exc:
-            logger.warning("Failed to persist session state for %s: %s", session.id, exc)
+            logger.warning("Failed to persist session state for %s: %s", session_id, exc)
             self.metrics["errors"] += 1
 
     def _delete_session_state(self, session_id: str):
@@ -232,13 +232,16 @@ class SessionManager:
             RuntimeError: If maximum session limit reached
         """
         ttl = ttl or self.default_ttl
+        expired_state_ids: List[str] = []
         
         # Phase 1: Acquire semaphore slot to prevent race conditions
         # This ensures we never exceed max_sessions even with concurrent creation
         if not self._session_semaphore.acquire(blocking=False):
             # Try to cleanup expired sessions first
             with self._lock:
-                self._cleanup_expired()
+                expired_state_ids = self._cleanup_expired()
+            for expired_session_id in expired_state_ids:
+                self._delete_session_state(expired_session_id)
             
             # Try again after cleanup
             if not self._session_semaphore.acquire(blocking=False):
@@ -249,6 +252,10 @@ class SessionManager:
         
         sandbox = None
         try:
+            persist_session_id: Optional[str] = None
+            persist_payload: Optional[Dict[str, Any]] = None
+            persist_ttl: Optional[int] = None
+
             # Phase 2: Create sandbox OUTSIDE the lock to avoid blocking other operations
             sandbox = CodeSandbox(**sandbox_kwargs)
             sandbox.create()
@@ -268,10 +275,14 @@ class SessionManager:
                 
                 self.sessions[session_id] = session
                 self.metrics["sessions_created"] += 1
-                self._save_session_state(session)
+                persist_session_id = session_id
+                persist_payload = self._session_state_payload(session)
+                persist_ttl = session.ttl
                 
                 logger.info(f"Session created: {session_id} (template: {template})")
-                return session_id
+            if persist_session_id and persist_payload is not None and persist_ttl is not None:
+                self._save_session_state(persist_session_id, persist_payload, persist_ttl)
+            return session_id
                 
         except Exception as e:
             # Release semaphore slot if creation failed
@@ -296,6 +307,11 @@ class SessionManager:
         Returns:
             Session object or None if not found/expired
         """
+        session_to_return: Optional[Session] = None
+        session_to_delete_state: Optional[str] = None
+        persist_payload: Optional[Dict[str, Any]] = None
+        persist_ttl: Optional[int] = None
+
         with self._lock:
             session = self.sessions.get(session_id)
             
@@ -308,14 +324,27 @@ class SessionManager:
             
             if session.is_expired:
                 logger.info(f"Session {session_id} expired, destroying")
-                self._destroy_session_unlocked(session_id)
-                return None
+                _, should_delete_state = self._destroy_session_unlocked(session_id)
+                if should_delete_state:
+                    session_to_delete_state = session_id
+            else:
+                session.touch()
+                self.metrics["sessions_reused"] += 1
+                persist_payload = self._session_state_payload(session)
+                persist_ttl = session.ttl
+                session_to_return = session
+
+        if session_to_delete_state:
+            self._delete_session_state(session_to_delete_state)
+            return None
+
+        if not session_to_return:
+            return None
+
+        if persist_payload is not None and persist_ttl is not None:
+            self._save_session_state(session_to_return.id, persist_payload, persist_ttl)
             
-            session.touch()
-            self.metrics["sessions_reused"] += 1
-            self._save_session_state(session)
-            
-            return session
+        return session_to_return
     
     def execute_in_session(
         self,
@@ -366,21 +395,26 @@ class SessionManager:
         Returns:
             True if destroyed successfully
         """
+        should_delete_state = False
         with self._lock:
-            return self._destroy_session_unlocked(session_id)
+            destroyed, should_delete_state = self._destroy_session_unlocked(session_id)
+
+        if should_delete_state:
+            self._delete_session_state(session_id)
+
+        return destroyed
     
-    def _destroy_session_unlocked(self, session_id: str) -> bool:
+    def _destroy_session_unlocked(self, session_id: str) -> tuple[bool, bool]:
         """Internal method to destroy session (must hold lock)."""
         session = self.sessions.get(session_id)
         
         if not session:
-            return False
+            return False, False
         
         try:
             session.is_active = False
             session.sandbox.destroy()
             del self.sessions[session_id]
-            self._delete_session_state(session_id)
             self.metrics["sessions_destroyed"] += 1
             
             # Release semaphore slot to allow new session creation
@@ -391,12 +425,12 @@ class SessionManager:
                 pass
             
             logger.info(f"Session destroyed: {session_id}")
-            return True
+            return True, True
             
         except Exception as e:
             logger.error(f"Error destroying session {session_id}: {e}")
             self.metrics["errors"] += 1
-            return False
+            return False, False
     
     def list_sessions(self) -> List[Dict[str, Any]]:
         """
@@ -431,27 +465,35 @@ class SessionManager:
                 "default_ttl": self.default_ttl
             }
     
-    def _cleanup_expired(self):
+    def _cleanup_expired(self) -> List[str]:
         """Clean up expired sessions."""
         expired_ids = [
             sid for sid, session in self.sessions.items()
             if session.is_expired
         ]
+        expired_state_ids: List[str] = []
         
         for sid in expired_ids:
-            self._destroy_session_unlocked(sid)
-            self.metrics["sessions_expired"] += 1
+            destroyed, should_delete_state = self._destroy_session_unlocked(sid)
+            if destroyed:
+                self.metrics["sessions_expired"] += 1
+            if should_delete_state:
+                expired_state_ids.append(sid)
         
         if expired_ids:
             logger.info(f"Cleaned up {len(expired_ids)} expired sessions")
+        return expired_state_ids
     
     def _start_cleanup_thread(self):
         """Start background cleanup thread."""
         def cleanup_loop():
             while not self._stop_cleanup.wait(self.cleanup_interval):
                 try:
+                    expired_state_ids: List[str] = []
                     with self._lock:
-                        self._cleanup_expired()
+                        expired_state_ids = self._cleanup_expired()
+                    for expired_session_id in expired_state_ids:
+                        self._delete_session_state(expired_session_id)
                 except Exception as e:
                     logger.error(f"Cleanup thread error: {e}")
         

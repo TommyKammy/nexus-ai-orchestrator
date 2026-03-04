@@ -349,6 +349,10 @@ class TemplateManager:
             True if successful
         """
         try:
+            errors = self.validate_template(template)
+            if errors:
+                raise ValueError("; ".join(errors))
+
             self.templates[template.name] = template
             
             if persist and self.custom_templates_path:
@@ -431,10 +435,17 @@ class TemplateManager:
         import re
         if not re.match(r'^\d+[mgMG]$', template.memory_limit):
             errors.append(f"Invalid memory limit format: {template.memory_limit}")
-        
+        else:
+            memory_amount = int(template.memory_limit[:-1])
+            if memory_amount <= 0:
+                errors.append("Memory limit must be greater than 0")
+
         # Validate timeout
         if template.timeout < 1 or template.timeout > 3600:
             errors.append(f"Timeout must be between 1 and 3600 seconds")
+
+        if template.cpu_quota <= 0:
+            errors.append("CPU quota must be greater than 0")
         
         return errors
     

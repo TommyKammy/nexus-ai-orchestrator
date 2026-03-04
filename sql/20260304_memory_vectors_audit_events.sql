@@ -40,10 +40,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS uniq_memory_vectors_content_hash
   ON memory_vectors (tenant_id, scope, content_hash)
   WHERE content_hash IS NOT NULL;
 
-CREATE INDEX IF NOT EXISTS idx_memory_vectors_lookup
-  ON memory_vectors (tenant_id, scope, content_hash)
-  WHERE content_hash IS NOT NULL;
-
 CREATE INDEX IF NOT EXISTS idx_memory_vectors_embedding
   ON memory_vectors USING ivfflat (embedding vector_cosine_ops)
   WITH (lists = 50);

@@ -8,7 +8,11 @@ The executor and workflows call:
 
 `POST /v1/data/ai/policy/result`
 
-With input shape:
+Canonical contract reference:
+
+- [docs/policy-input-output-contract.md](../../docs/policy-input-output-contract.md)
+
+Inner policy input object shape (this is the value under OPA HTTP `input`):
 
 ```json
 {
@@ -31,6 +35,7 @@ With input shape:
 
 ## Result shape
 
+Inner policy result object shape (this is the value under OPA HTTP `result`):
 ```json
 {
   "policy_id": "executor-core-v1",

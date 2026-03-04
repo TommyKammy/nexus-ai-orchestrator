@@ -34,6 +34,9 @@ This system provides a complete infrastructure for AI-powered applications with:
   Executor endpoints are internal-only and invoked by workflows/services.
 ```
 
+Architecture decision records (ADRs) are tracked under `docs/adr/`.
+See the ADR index at `docs/adr/README.md` for the full list.
+
 ## Components
 
 | Component | Purpose | Technology |
@@ -281,6 +284,7 @@ See [SECURITY.md](SECURITY.md) for detailed security documentation.
 ├── n8n/
 │   └── workflows/             # n8n workflow definitions
 ├── docs/
+│   ├── adr/                   # architecture decision records
 │   ├── reports/               # implementation and verification reports
 │   └── ...                    # operations and troubleshooting docs
 ├── scripts/                   # Utility scripts

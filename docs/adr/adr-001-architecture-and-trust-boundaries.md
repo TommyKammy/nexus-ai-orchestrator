@@ -37,10 +37,10 @@ Untrusted Clients
    |            |              |
    | policy     | persistence  | execution request
    v            v              v
-[TB-3] OPA   [TB-5] Postgres  [TB-4] Executor API -> Sandbox Containers
-   ^            ^                   |
-   |            |                   v
-   +------------+--------------- [TB-5] Redis
+[TB-3] OPA   [TB-5] Data Stores: Postgres/Redis   [TB-4] Executor API -> Sandbox Containers
+   ^                     ^                               |
+   |                     |                               v
+   +---------------------+-------------------------------+
 ```
 
 ### Trust Boundaries

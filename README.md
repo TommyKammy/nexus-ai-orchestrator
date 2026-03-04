@@ -34,8 +34,8 @@ This system provides a complete infrastructure for AI-powered applications with:
   Executor endpoints are internal-only and invoked by workflows/services.
 ```
 
-Architecture decision records are tracked in `docs/adr/`:
-- `docs/adr/adr-001-architecture-and-trust-boundaries.md`
+Architecture decision records (ADRs) are tracked under `docs/adr/`.
+See the ADR index at `docs/adr/README.md` for the full list.
 
 ## Components
 

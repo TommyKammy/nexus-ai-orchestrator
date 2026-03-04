@@ -9,7 +9,8 @@ This document describes the security features of the Executor system and provide
 3. [API Authentication](#api-authentication)
 4. [Production Deployment](#production-deployment)
 5. [Security Best Practices](#security-best-practices)
-6. [Reporting Security Issues](#reporting-security-issues)
+6. [Threat Model and Checklist v1](#threat-model-and-checklist-v1)
+7. [Reporting Security Issues](#reporting-security-issues)
 
 ---
 
@@ -348,6 +349,17 @@ docker run -it --net host --pid host --userns host \
   -v /etc:/etc --label docker_bench_security \
   docker/docker-bench-security
 ```
+
+---
+
+## Threat Model and Checklist v1
+
+See `docs/security-threat-model-v1.md` for:
+
+- scoped threat actors and trust boundaries
+- concrete threat scenario matrix
+- PR/deployment/operations security checklist
+- open risks and follow-up actions
 
 ---
 

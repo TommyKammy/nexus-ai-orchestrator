@@ -9,6 +9,7 @@ required_nodes=(
   "Evaluate Policy"
   "Check Policy"
   "Policy Error?"
+  "Error Response"
   "Finalize Success Payload"
   "Insert Episode"
   "Insert Audit"
@@ -25,7 +26,8 @@ check_workflow() {
   local audit_query
   local audit_replacement
   local success_response
-  local validation_gate_targets
+  local validation_true_target
+  local validation_false_target
   local brain_workflow_id
   local brain_workflow_file
 
@@ -37,7 +39,8 @@ check_workflow() {
   audit_query="$(jq -r '.nodes[] | select(.name == "Insert Audit") | .parameters.query' "$workflow_path")"
   audit_replacement="$(jq -r '.nodes[] | select(.name == "Insert Audit") | .parameters.additionalFields.queryReplacement' "$workflow_path")"
   success_response="$(jq -r '.nodes[] | select(.name == "Success Response") | (.parameters.responseBody // .parameters.json // "")' "$workflow_path")"
-  validation_gate_targets="$(jq -r '.connections["Validation Error?"].main[][]?.node' "$workflow_path")"
+  validation_true_target="$(jq -r '.connections["Validation Error?"].main[0][0].node // empty' "$workflow_path")"
+  validation_false_target="$(jq -r '.connections["Validation Error?"].main[1][0].node // empty' "$workflow_path")"
   brain_workflow_id="$(jq -r '.nodes[] | select(.name == "Execute Brain Router") | (.parameters.workflowId.value // empty)' "$workflow_path")"
   brain_workflow_file="${workflow_dir}/${brain_workflow_id}.json"
 
@@ -58,8 +61,8 @@ check_workflow() {
     exit 1
   fi
 
-  if ! grep -Fq "Error Response" <<<"$validation_gate_targets" || ! grep -Fq "Evaluate Policy" <<<"$validation_gate_targets"; then
-    echo "Validation Error? node must branch to Error Response and Evaluate Policy in ${workflow_path}" >&2
+  if [[ "$validation_true_target" != "Error Response" || "$validation_false_target" != "Evaluate Policy" ]]; then
+    echo "Validation Error? node must route true->Error Response and false->Evaluate Policy in ${workflow_path}" >&2
     exit 1
   fi
 

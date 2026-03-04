@@ -81,6 +81,9 @@ cd ai-orchestrator
 cp .env.example .env
 # Edit .env with your secrets
 
+# Local bootstrap (waits for healthy services)
+bash scripts/bootstrap-local.sh
+
 # One-command deploy (includes Caddy + policy-ui validation)
 ./deploy.sh
 \`\`\`
@@ -92,6 +95,7 @@ cp .env.example .env
 
 Tip:
 - Set `N8N_HOST` in `.env` before deploy to validate external route (`https://<N8N_HOST>/policy-ui/`).
+- See local bootstrap guide: `docs/local-compose-bootstrap.md`
 
 ### n8n Japanese Locale Overlay (CE)
 

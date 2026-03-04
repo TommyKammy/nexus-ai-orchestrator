@@ -28,10 +28,9 @@ WEBHOOK_BASE_URL="${WEBHOOK_BASE_URL:-http://localhost:${N8N_PORT}}"
 
 # Workflows
 WORKFLOW_DIR="${PWD}/n8n/workflows-v3"
-WORKFLOW_FILES=(
-  "slack_chat_minimal_v1.json"
-  "chat_router_v1.json"
-)
+WORKFLOW_FILES=()
+SLACK_WORKFLOW_NAME="${SLACK_WORKFLOW_NAME:-slack_chat_minimal_v1}"
+ROUTER_WORKFLOW_NAME="${ROUTER_WORKFLOW_NAME:-Chat Router v1 (Adaptive Routing)}"
 
 CI_IMPORT_DIR=""
 WORKLOG="${WORKLOG:-/dev/null}"
@@ -128,6 +127,9 @@ def normalize_workflow(obj):
     # Ensure required fields exist for import stability
     if isinstance(obj, dict):
         obj.setdefault("active", False)  # import may ignore; we activate later via CLI
+        # n8n import in CI fails when exported string tags are mapped without tag entities.
+        # Keep smoke test focused on importability of workflow graphs, not tag metadata.
+        obj["tags"] = []
     return obj
 
 if isinstance(data, dict):
@@ -163,14 +165,26 @@ sys.exit("No webhook node path found in chat_router_v1.json")
 PY
 }
 
+discover_workflows() {
+  mapfile -t WORKFLOW_FILES < <(
+    find "${WORKFLOW_DIR}" -maxdepth 1 -type f -name '*.json' -printf '%f\n' | sort
+  )
+
+  if [[ "${#WORKFLOW_FILES[@]}" -eq 0 ]]; then
+    die "No workflow JSON files found under ${WORKFLOW_DIR}"
+  fi
+}
+
 main() {
   require_cmd docker
   require_cmd curl
   require_cmd python3
 
   [[ -d "${WORKFLOW_DIR}" ]] || die "Workflow directory not found: ${WORKFLOW_DIR}"
+  discover_workflows
 
   echo "WORKFLOW_DIR=${WORKFLOW_DIR}"
+  echo "WORKFLOW_COUNT=${#WORKFLOW_FILES[@]}"
   ls -la "${WORKFLOW_DIR}" || true
   echo ""
 
@@ -239,6 +253,12 @@ main() {
       echo "      Imported ${wf}"
     fi
   done
+  imported_count="$(docker exec -i "${POSTGRES_CONTAINER}" psql -tA -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -c 'SELECT COUNT(*) FROM workflow_entity;')"
+  imported_count="${imported_count//[[:space:]]/}"
+  if [[ -z "${imported_count}" || "${imported_count}" -lt "${#WORKFLOW_FILES[@]}" ]]; then
+    die "Expected at least ${#WORKFLOW_FILES[@]} imported workflows, found ${imported_count:-0}"
+  fi
+  echo "      Imported workflows in DB: ${imported_count}"
   echo ""
 
   echo "[2/5] Inspecting schema and activating workflows..."
@@ -251,13 +271,11 @@ SELECT id, name, active FROM workflow_entity ORDER BY id;
 " 2>&1 | tee -a "$WORKLOG"
   
   echo "      Activating workflows via SQL..."
-  docker exec -i "${POSTGRES_CONTAINER}" psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" <<'SQL' | tee -a "$WORKLOG"
+  docker exec -i "${POSTGRES_CONTAINER}" psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" <<SQL | tee -a "$WORKLOG"
 -- Update active status
 UPDATE workflow_entity 
 SET active = true 
-WHERE id IN (
-  SELECT id FROM workflow_entity ORDER BY id DESC LIMIT 2
-);
+WHERE name IN ('${SLACK_WORKFLOW_NAME}', '${ROUTER_WORKFLOW_NAME}');
 
 -- Set activeVersionId to the latest version for each active workflow (required for n8n 2.8.3)
 UPDATE workflow_entity w
@@ -271,6 +289,15 @@ WHERE w.active = true;
 
 SELECT id, name, active, "activeVersionId" FROM workflow_entity WHERE active = true;
 SQL
+
+  active_required_count="$(
+    docker exec -i "${POSTGRES_CONTAINER}" psql -tA -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -c \
+      "SELECT COUNT(*) FROM workflow_entity WHERE active = true AND name IN ('${SLACK_WORKFLOW_NAME}', '${ROUTER_WORKFLOW_NAME}');"
+  )"
+  active_required_count="${active_required_count//[[:space:]]/}"
+  if [[ "${active_required_count}" != "2" ]]; then
+    die "Expected 2 active smoke-test workflows (${SLACK_WORKFLOW_NAME}, ${ROUTER_WORKFLOW_NAME}), found ${active_required_count:-0}"
+  fi
   
   echo "      Activation complete."
   echo ""

@@ -1,0 +1,46 @@
+name: Bug report
+description: Report a defect or regression
+title: "bug: <short summary>"
+labels:
+  - type-test
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What is failing?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include exact commands, payloads, and environment details.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs / evidence
+      description: Add logs, stack traces, screenshots, or links.
+    validations:
+      required: false
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact and risk
+      description: What is affected and how severe is it?
+    validations:
+      required: true

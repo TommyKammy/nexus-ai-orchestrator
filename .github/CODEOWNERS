@@ -1,0 +1,15 @@
+# Default ownership
+* @TommyKammy
+
+# Infrastructure and deployment
+docker/** @TommyKammy
+k8s/** @TommyKammy
+scripts/** @TommyKammy
+
+# Execution and policy
+executor/** @TommyKammy
+policy/** @TommyKammy
+
+# Workflow and docs
+n8n/** @TommyKammy
+docs/** @TommyKammy

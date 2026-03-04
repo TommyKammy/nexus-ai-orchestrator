@@ -432,11 +432,12 @@ See [Security Notice](#security-notice) for details.
 
 ## Contributing
 
+Contribution workflow and merge requirements are documented in [CONTRIBUTING.md](CONTRIBUTING.md).
+
 1. Review [SECURITY.md](SECURITY.md) before contributing
 2. Ensure no secrets are committed (use \`.env.example\` as template)
-3. Run security checks: \`grep -r "CHANGE_ME\|password\|secret" . --include="*.yml" --include="*.py"\`
-4. Test deployment locally before submitting PR
-5. Follow conventional commits style
+3. Test deployment locally before submitting PR
+4. Follow conventional commits style
 
 ## License
 

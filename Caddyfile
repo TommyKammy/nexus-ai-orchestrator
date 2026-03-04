@@ -42,6 +42,22 @@ n8n-s-app01.tmcast.net {
         body "Unauthorized: Invalid or missing API key"
     }
 
+    # Rate limit all webhook traffic at the edge (30 req/min per source IP)
+    @webhook_rate_limited {
+        path /webhook/*
+        rate_limit {
+            zone webhook_limit {
+                key {remote_host}
+                events 30
+                window 1m
+            }
+        }
+    }
+
+    respond @webhook_rate_limited 429 {
+        body "Too Many Requests"
+    }
+
     # Lightweight policy registry UI
     handle /policy-ui* {
         reverse_proxy policy-bundle-server:8088

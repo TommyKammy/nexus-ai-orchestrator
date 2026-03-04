@@ -335,6 +335,7 @@ OPENAI_API_KEY=your_openai_key
 - missing/invalid key returns `401 Unauthorized`
 - `/webhook/slack-command` is explicitly exempt and protected separately via `X-Internal-Auth`
 - internal-only service prefixes (`/internal/*`, `/executor/*`, `/opa/*`, `/postgres/*`, `/redis/*`) are explicitly denied at the edge (`404`)
+- webhook routes are edge rate-limited to `30 requests/minute` per source IP (`429` on excess)
 
 ## PostgreSQL 18 Upgrade
 

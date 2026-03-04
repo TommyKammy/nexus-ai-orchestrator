@@ -81,10 +81,14 @@ cd ai-orchestrator
 cp .env.example .env
 # Edit .env with your secrets
 
-# Local bootstrap (waits for healthy services)
+# Option A: local bootstrap in current repository
 bash scripts/bootstrap-local.sh
+\`\`\`
 
-# One-command deploy (includes Caddy + policy-ui validation)
+Or, for server deployment to `/opt/ai-orchestrator`:
+
+\`\`\`bash
+# Option B: deployment flow (includes Caddy + policy-ui validation)
 ./deploy.sh
 \`\`\`
 
@@ -94,6 +98,7 @@ bash scripts/bootstrap-local.sh
 - `policy-ui` route through Caddy
 
 Tip:
+- Do not run local bootstrap and deploy flow simultaneously on the same host; both use identical container names and host ports.
 - Set `N8N_HOST` in `.env` before deploy to validate external route (`https://<N8N_HOST>/policy-ui/`).
 - See local bootstrap guide: `docs/local-compose-bootstrap.md`
 

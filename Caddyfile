@@ -11,7 +11,7 @@ n8n-s-app01.tmcast.net {
     }
 
     # Internal-only service prefixes must never be edge-routable.
-    @internal_only path /internal/* /executor/* /opa/* /postgres/* /redis/*
+    @internal_only path /internal /internal/* /executor /executor/* /opa /opa/* /postgres /postgres/* /redis /redis/*
     respond @internal_only 404
 
     # Legacy Slack slash command paths - rewrite to n8n webhook

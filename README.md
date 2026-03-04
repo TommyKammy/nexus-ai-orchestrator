@@ -331,6 +331,10 @@ KIMI_API_KEY=your_kimi_key
 OPENAI_API_KEY=your_openai_key
 \`\`\`
 
+`N8N_WEBHOOK_API_KEY` is enforced by Caddy for `/webhook/*` routes:
+- missing/invalid key returns `401 Unauthorized`
+- the same key is injected only for internal router path `/webhook/chat/router-v1`
+
 ## PostgreSQL 18 Upgrade
 
 This repository now defaults to `pgvector/pgvector:pg18`.

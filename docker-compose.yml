@@ -138,6 +138,8 @@ services:
     environment:
       # Internal auth header for Slack webhook security (since signature verification is disabled)
       SLACK_INTERNAL_AUTH: ${SLACK_INTERNAL_AUTH:-slack-internal-auth-token-change-me}
+      # API key used by Caddy to protect and proxy webhook endpoints
+      N8N_WEBHOOK_API_KEY: ${N8N_WEBHOOK_API_KEY}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
       - ./caddy_data:/data

@@ -31,14 +31,14 @@ n8n-s-app01.tmcast.net {
     # Handle internal AI router calls - inject API key
     handle /webhook/chat/router-v1 {
         reverse_proxy n8n:5678 {
-            header_up X-API-Key 841502453b8ac8bb9c691ff57e7d1ecf070c4c266eb63be554235a9be6659b37
+            header_up X-API-Key {env.N8N_WEBHOOK_API_KEY}
         }
     }
 
     # Block unauthorized webhook requests (API key protection for all other webhooks)
     @unauthorized {
         path /webhook/*
-        not header X-API-Key 841502453b8ac8bb9c691ff57e7d1ecf070c4c266eb63be554235a9be6659b37
+        not header X-API-Key {env.N8N_WEBHOOK_API_KEY}
     }
 
     respond @unauthorized 401 {

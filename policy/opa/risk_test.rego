@@ -23,6 +23,7 @@ test_risk_score_component_accumulation if {
 }
 
 test_requires_approval_when_risk_reaches_threshold if {
+	threshold := data.policy.thresholds.requires_approval
 	result := data.ai.policy.result with input as {
 		"subject": {
 			"tenant_id": "t1",
@@ -34,7 +35,7 @@ test_requires_approval_when_risk_reaches_threshold if {
 		"action": "executor.execute",
 		"context": {"network_enabled": true, "payload_size": 10}
 	}
-	result.risk_score == 40
+	result.risk_score == threshold
 	result.decision == "requires_approval"
 	result.requires_approval
 	not result.allow

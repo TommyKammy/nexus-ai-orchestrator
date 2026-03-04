@@ -53,3 +53,9 @@ Inner policy result object shape (this is the value under OPA HTTP `result`):
 - `POLICY_MODE=shadow`: evaluate and log only
 - `POLICY_MODE=enforce`: block `deny` and `requires_approval`
 - `POLICY_FAIL_MODE=open|closed`: behavior on OPA outage
+
+## Local policy tests
+
+```bash
+opa test policy/opa/ -d policy/opa/data.json
+```

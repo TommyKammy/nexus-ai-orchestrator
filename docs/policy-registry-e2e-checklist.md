@@ -49,4 +49,4 @@ Validate end-to-end path:
 - DB snippets (`policy_revisions`, `policy_publish_logs`)
 
 ## Latest Evidence
-- `docs/POLICY-REGISTRY-E2E-EVIDENCE-20260222.md`
+- `docs/policy-registry-e2e-evidence-20260222.md`

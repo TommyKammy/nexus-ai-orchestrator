@@ -1,0 +1,12 @@
+# Reports
+
+This directory contains implementation and verification reports that were previously stored in the repository root.
+
+## Contents
+
+- `implementation-summary.md`
+- `phase2-summary.md`
+- `phase3-summary.md`
+- `production-certification-complete.md`
+- `final-verification-complete.md`
+- `security-audit-report.md`

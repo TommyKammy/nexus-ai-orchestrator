@@ -113,13 +113,13 @@ Week2 adds no-restart policy publish flow for OPA:
 - Lightweight UI is available at `/policy-ui/` (served by `policy-bundle-server`)
 
 Related docs:
-- `docs/POLICY-REGISTRY-OPERATIONS.md`
-- `docs/POLICY-REGISTRY-ROLLBACK.md`
-- `docs/POLICY-REGISTRY-E2E-CHECKLIST.md`
-- `docs/POLICY-REGISTRY-E2E-EVIDENCE-20260222.md`
-- `docs/POLICY-REGISTRY-TROUBLESHOOTING.md`
-- `docs/POSTGRES-DATA-LAYOUT-MIGRATION.md`
-- `docs/HOST-QUICK-FLOW.md`
+- `docs/policy-registry-operations.md`
+- `docs/policy-registry-rollback.md`
+- `docs/policy-registry-e2e-checklist.md`
+- `docs/policy-registry-e2e-evidence-20260222.md`
+- `docs/policy-registry-troubleshooting.md`
+- `docs/postgres-data-layout-migration.md`
+- `docs/host-quick-flow.md`
 
 ### Kubernetes (Production)
 
@@ -228,7 +228,7 @@ curl http://localhost:8080/metrics/prometheus
 - **0 Critical** vulnerabilities found
 - **0 High** severity issues
 - Comprehensive security documentation in [SECURITY.md](SECURITY.md)
-- Full audit report in [SECURITY_AUDIT_REPORT.md](SECURITY_AUDIT_REPORT.md)
+- Full audit report in [docs/reports/security-audit-report.md](docs/reports/security-audit-report.md)
 
 ### Key Security Features
 
@@ -280,6 +280,9 @@ See [SECURITY.md](SECURITY.md) for detailed security documentation.
 │   └── README.md              # Executor documentation
 ├── n8n/
 │   └── workflows/             # n8n workflow definitions
+├── docs/
+│   ├── reports/               # implementation and verification reports
+│   └── ...                    # operations and troubleshooting docs
 ├── scripts/                   # Utility scripts
 ├── SECURITY.md                # Security documentation
 └── README.md                  # This file

@@ -113,16 +113,37 @@ Policy result object fields (`result` from OPA):
     "allow": false,
     "requires_approval": false,
     "risk_score": 90,
-    "reasons": ["missing_tenant_context"]
+    "reasons": ["task_type_not_allowed"]
   }
 }
 ```
 
+## Raw OPA Response vs PolicyClient Result
+
+The examples above show the raw OPA HTTP shape (`{"result": ...}`).
+
+`executor/policy_client.py` returns a normalized object (no outer `result` key) and always includes `error`:
+
+```json
+{
+  "policy_id": "executor-core-v1",
+  "policy_version": "2026-02-20",
+  "decision": "allow",
+  "allow": true,
+  "requires_approval": false,
+  "risk_score": 0,
+  "reasons": [],
+  "error": null
+}
+```
+
+Callers of `PolicyClient.evaluate()` should consume this normalized shape.
+
 ## Failure/Fallback Semantics
 
-When OPA is unavailable, `executor/policy_client.py` normalizes fallback responses based on `POLICY_FAIL_MODE`:
+When OPA is unavailable, `executor/policy_client.py` returns fallback results in the same normalized shape above (no outer `result` key), based on `POLICY_FAIL_MODE`:
 
 - `open`: `decision=allow`, `allow=true`, `requires_approval=false`
 - `closed`: `decision=deny`, `allow=false`, `requires_approval=true`
 
-These fallback responses still include `policy_id=fallback`, `policy_version=fallback`, and `reasons=["policy_unavailable"]`.
+These fallback responses still include `policy_id=fallback`, `policy_version=fallback`, `reasons=["policy_unavailable"]`, and a non-null `error` value.

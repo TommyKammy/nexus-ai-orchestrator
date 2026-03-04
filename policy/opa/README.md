@@ -10,9 +10,9 @@ The executor and workflows call:
 
 Canonical contract reference:
 
-- `docs/policy-input-output-contract.md`
+- [docs/policy-input-output-contract.md](../../docs/policy-input-output-contract.md)
 
-With input shape:
+Inner policy input object shape (this is the value under OPA HTTP `input`):
 
 ```json
 {
@@ -35,6 +35,7 @@ With input shape:
 
 ## Result shape
 
+Inner policy result object shape (this is the value under OPA HTTP `result`):
 ```json
 {
   "policy_id": "executor-core-v1",

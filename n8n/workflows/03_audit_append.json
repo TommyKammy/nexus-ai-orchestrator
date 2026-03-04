@@ -9,17 +9,23 @@
       },
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [250, 300],
+      "position": [
+        250,
+        300
+      ],
       "webhookId": "audit-append",
       "name": "Webhook"
     },
     {
       "parameters": {
-        "jsCode": "const input = $input.first().json.body;\n\n// Validate required fields\nif (!input.actor || !input.action || !input.target || !input.decision) {\n  return [{\n    json: {\n      error: 'Missing required fields: actor, action, target, decision'\n    }\n  }];\n}\n\n// Validate decision value\nconst validDecisions = ['allowed', 'denied', 'requires_approval'];\nif (!validDecisions.includes(input.decision)) {\n  return [{\n    json: {\n      error: 'Invalid decision. Must be: allowed, denied, or requires_approval'\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    actor: input.actor,\n    action: input.action,\n    target: input.target,\n    decision: input.decision,\n    payload: input.payload || {}\n  }\n}];"
+        "jsCode": "const input = $input.first().json.body || {};\n\nconst actor = String(input.actor || '').trim();\nconst action = String(input.action || '').trim();\nconst target = String(input.target || '').trim();\nconst decision = String(input.decision || '').trim();\n\nif (!actor || !action || !target || !decision) {\n  return [{\n    json: {\n      error: 'Missing required fields: actor, action, target, decision'\n    }\n  }];\n}\n\nconst validDecisions = ['allowed', 'denied', 'requires_approval'];\nif (!validDecisions.includes(decision)) {\n  return [{\n    json: {\n      error: 'Invalid decision. Must be: allowed, denied, or requires_approval'\n    }\n  }];\n}\n\nconst payload = (input.payload && typeof input.payload === 'object' && !Array.isArray(input.payload))\n  ? input.payload\n  : {};\n\nconst requestId = String(payload.request_id || '').trim();\nconst policyId = String(payload.policy_id || '').trim();\nconst policyVersion = String(payload.policy_version || '').trim();\nconst policyReason = String(payload.policy_reason || '').trim() || null;\n\nif (!requestId || !policyId || !policyVersion) {\n  return [{\n    json: {\n      error: 'payload.request_id, payload.policy_id, payload.policy_version are required'\n    }\n  }];\n}\n\nlet riskScore = null;\nif (payload.risk_score !== undefined && payload.risk_score !== null && payload.risk_score !== '') {\n  const parsedRisk = Number(payload.risk_score);\n  if (!Number.isFinite(parsedRisk)) {\n    return [{\n      json: {\n        error: 'payload.risk_score must be numeric when provided'\n      }\n    }];\n  }\n  riskScore = Math.round(parsedRisk);\n}\n\nreturn [{\n  json: {\n    actor,\n    action,\n    target,\n    decision,\n    payload,\n    request_id: requestId,\n    policy_id: policyId,\n    policy_version: policyVersion,\n    policy_reason: policyReason,\n    risk_score: riskScore\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
-      "position": [450, 300],
+      "position": [
+        450,
+        300
+      ],
       "name": "Validate Input"
     },
     {
@@ -28,7 +34,10 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
-      "position": [650, 200],
+      "position": [
+        650,
+        200
+      ],
       "name": "Check Validation"
     },
     {
@@ -38,18 +47,26 @@
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [850, 200],
+      "position": [
+        850,
+        200
+      ],
       "name": "Error Response"
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "INSERT INTO audit_events (actor, action, target, decision, payload_jsonb, created_at)\nVALUES ('{{ $input.first().json.actor.replace(/'/g, \"''\") }}', '{{ $input.first().json.action.replace(/'/g, \"''\") }}', '{{ $input.first().json.target.replace(/'/g, \"''\") }}', '{{ $input.first().json.decision }}', '{{ JSON.stringify($input.first().json.payload).replace(/'/g, \"''\") }}'::jsonb, NOW());",
-        "additionalFields": {}
+        "query": "INSERT INTO audit_events (\n  actor,\n  action,\n  target,\n  decision,\n  payload_jsonb,\n  request_id,\n  policy_id,\n  policy_version,\n  policy_reason,\n  risk_score,\n  created_at\n)\nVALUES (\n  $1,\n  $2,\n  $3,\n  $4,\n  $5::jsonb,\n  $6,\n  $7,\n  $8,\n  $9,\n  $10,\n  NOW()\n)\nRETURNING id, request_id, created_at;",
+        "additionalFields": {
+          "queryReplacement": "={{ [\n  $input.first().json.actor,\n  $input.first().json.action,\n  $input.first().json.target,\n  $input.first().json.decision,\n  JSON.stringify($input.first().json.payload || {}),\n  $input.first().json.request_id,\n  $input.first().json.policy_id,\n  $input.first().json.policy_version,\n  $input.first().json.policy_reason,\n  $input.first().json.risk_score\n] }}"
+        }
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
-      "position": [850, 400],
+      "position": [
+        850,
+        400
+      ],
       "name": "Insert Audit",
       "credentials": {
         "postgres": {
@@ -61,11 +78,14 @@
     {
       "parameters": {
         "respondWith": "json",
-        "json": "={{ JSON.stringify({ status: \"success\", message: \"Audit event recorded\" }) }}"
+        "json": "={{ (() => {\n  const insertResult = $('Insert Audit').first().json;\n  const row = Array.isArray(insertResult) ? insertResult[0] : insertResult;\n  return JSON.stringify({\n    status: 'success',\n    message: 'Audit event recorded',\n    audit_event_id: row?.id || null,\n    request_id: row?.request_id || $('Validate Input').first().json.request_id || null,\n    created_at: row?.created_at || null,\n  });\n})() }}"
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [1050, 400],
+      "position": [
+        1050,
+        400
+      ],
       "name": "Success Response"
     }
   ],

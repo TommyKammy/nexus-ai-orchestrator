@@ -319,6 +319,10 @@ class TestSecurity:
         with pytest.raises(ValueError, match="memory_limit must match format"):
             CodeSandbox(memory_limit="1024")
 
+    def test_invalid_memory_limit_zero_rejected(self, mock_docker_client):
+        with pytest.raises(ValueError, match="memory_limit must be greater than 0"):
+            CodeSandbox(memory_limit="0m")
+
     def test_invalid_cpu_quota_rejected(self, mock_docker_client):
         with pytest.raises(ValueError, match="cpu_quota must be greater than 0"):
             CodeSandbox(cpu_quota=0)

@@ -23,6 +23,9 @@ logger = logging.getLogger(__name__)
 
 
 ContainerType = Any
+DEFAULT_PIDS_LIMIT = 128
+DEFAULT_NOFILE_LIMIT = 1024
+DEFAULT_NPROC_LIMIT = 256
 
 
 class CodeSandbox:
@@ -48,8 +51,10 @@ class CodeSandbox:
         """
         if timeout < 1 or timeout > 3600:
             raise ValueError("timeout must be between 1 and 3600 seconds")
-        if not re.match(r"^\d+[mMgG]$", memory_limit):
+        if not isinstance(memory_limit, str) or not re.match(r"^\d+[mMgG]$", memory_limit):
             raise ValueError("memory_limit must match format like '512m' or '1g'")
+        if int(memory_limit[:-1]) <= 0:
+            raise ValueError("memory_limit must be greater than 0 (e.g., '512m' or '1g')")
         if cpu_quota <= 0:
             raise ValueError("cpu_quota must be greater than 0")
 
@@ -89,15 +94,15 @@ class CodeSandbox:
                 "memswap_limit": self.memory_limit,
                 "cpu_quota": self.cpu_quota,
                 "cpu_period": 100000,
-                "pids_limit": 128,
+                "pids_limit": DEFAULT_PIDS_LIMIT,
                 "network_disabled": self.network_disabled,
                 "read_only": True,
                 "security_opt": ["no-new-privileges:true"],
                 "cap_drop": ["ALL"],
                 "cap_add": [],
                 "ulimits": [
-                    Ulimit(name="nofile", soft=1024, hard=1024),
-                    Ulimit(name="nproc", soft=256, hard=256),
+                    Ulimit(name="nofile", soft=DEFAULT_NOFILE_LIMIT, hard=DEFAULT_NOFILE_LIMIT),
+                    Ulimit(name="nproc", soft=DEFAULT_NPROC_LIMIT, hard=DEFAULT_NPROC_LIMIT),
                 ],
                 "tmpfs": {
                     "/tmp": "rw,noexec,nosuid,size=100m,uid=1000,gid=1000",

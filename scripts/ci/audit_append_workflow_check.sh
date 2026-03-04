@@ -9,11 +9,20 @@ query_patterns=(
   "RETURNING id, request_id, created_at;"
   '$1'
   '$2'
+  '$3'
+  '$4'
+  '$5'
+  '$6'
+  '$7'
+  '$8'
+  '$9'
+  '$10'
 )
 
 response_patterns=(
   "audit_event_id"
   "request_id"
+  "created_at"
 )
 
 check_workflow() {

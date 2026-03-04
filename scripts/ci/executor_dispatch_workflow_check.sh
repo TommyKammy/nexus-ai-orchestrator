@@ -17,6 +17,7 @@ required_nodes=(
 
 check_workflow() {
   local workflow_path="$1"
+  local workflow_dir
   local webhook_path
   local policy_url
   local episode_query
@@ -25,7 +26,10 @@ check_workflow() {
   local audit_replacement
   local success_response
   local validation_gate_targets
+  local brain_workflow_id
+  local brain_workflow_file
 
+  workflow_dir="$(dirname "$workflow_path")"
   webhook_path="$(jq -r '.nodes[] | select(.name == "Webhook") | .parameters.path' "$workflow_path")"
   policy_url="$(jq -r '.nodes[] | select(.name == "Evaluate Policy") | .parameters.url' "$workflow_path")"
   episode_query="$(jq -r '.nodes[] | select(.name == "Insert Episode") | .parameters.query' "$workflow_path")"
@@ -34,6 +38,8 @@ check_workflow() {
   audit_replacement="$(jq -r '.nodes[] | select(.name == "Insert Audit") | .parameters.additionalFields.queryReplacement' "$workflow_path")"
   success_response="$(jq -r '.nodes[] | select(.name == "Success Response") | (.parameters.responseBody // .parameters.json // "")' "$workflow_path")"
   validation_gate_targets="$(jq -r '.connections["Validation Error?"].main[][]?.node' "$workflow_path")"
+  brain_workflow_id="$(jq -r '.nodes[] | select(.name == "Execute Brain Router") | (.parameters.workflowId.value // empty)' "$workflow_path")"
+  brain_workflow_file="${workflow_dir}/${brain_workflow_id}.json"
 
   for node_name in "${required_nodes[@]}"; do
     if ! jq -e --arg node_name "$node_name" '.nodes[] | select(.name == $node_name)' "$workflow_path" >/dev/null; then
@@ -77,6 +83,11 @@ check_workflow() {
 
   if ! grep -Fq "policy:" <<<"$success_response"; then
     echo "Success response must include policy object in ${workflow_path}" >&2
+    exit 1
+  fi
+
+  if [[ -n "$brain_workflow_id" && ! -f "$brain_workflow_file" ]]; then
+    echo "Missing referenced subworkflow '${brain_workflow_id}.json' for ${workflow_path}" >&2
     exit 1
   fi
 }

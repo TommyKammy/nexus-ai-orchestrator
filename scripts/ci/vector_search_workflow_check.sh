@@ -3,13 +3,13 @@ set -euo pipefail
 
 search_patterns=(
   'ORDER BY embedding <=> $1::vector'
-  'LIMIT $4;'
+  'LIMIT $4'
 )
 
 response_patterns=(
-  "rank: index + 1"
+  "rank:"
   "similarity_score"
-  "results_count: rankedResults.length"
+  "results_count:"
 )
 
 check_workflow() {

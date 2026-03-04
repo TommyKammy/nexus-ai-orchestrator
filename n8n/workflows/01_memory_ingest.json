@@ -9,17 +9,23 @@
       },
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [250, 300],
+      "position": [
+        250,
+        300
+      ],
       "webhookId": "memory-ingest",
       "name": "Webhook"
     },
     {
       "parameters": {
-        "jsCode": "// Validate input\nconst input = $input.first().json.body;\n\nif (!input.tenant_id || !input.scope || !input.text) {\n  return [{\n    json: {\n      error: 'Missing required fields: tenant_id, scope, text'\n    }\n  }];\n}\n\n// Secret patterns to reject\nconst secretPatterns = [\n  /api[_-]?key/i,\n  /bearer\\s+[A-Za-z0-9-_.]+/i,\n  /-----BEGIN(.*?)PRIVATE KEY-----/i\n];\n\n// Check for secrets in text\nif (secretPatterns.some(p => p.test(input.text))) {\n  return [{\n    json: {\n      error: 'Rejected: potential secret detected in text'\n    }\n  }];\n}\n\n// Filter facts - only keep those with confidence >= 0.75 OR source == explicit\nconst filteredFacts = (input.facts || []).filter(f => {\n  // Check for secrets in fact fields\n  const factText = `${f.subject || ''} ${f.predicate || ''} ${f.object || ''}`;\n  if (secretPatterns.some(p => p.test(factText))) {\n    return false;\n  }\n  \n  // Apply commit rules\n  if (f.confidence >= 0.75 || input.source === 'explicit') {\n    // Reject if subject/predicate/object empty\n    if (!f.subject || !f.predicate || !f.object) {\n    return false;\n    }\n    return true;\n  }\n  return false;\n});\n\nreturn [{\n  json: {\n    tenant_id: input.tenant_id,\n    scope: input.scope,\n    text: input.text,\n    facts: filteredFacts,\n    source: input.source || 'unknown',\n    tags: input.tags || []\n  }\n}];"
+        "jsCode": "const crypto = require('crypto');\n\n// Validate input\nconst input = $input.first().json.body;\nconst normalizedText = String(input?.text || '').trim();\n\nif (!input?.tenant_id || !input?.scope || !normalizedText) {\n  return [{\n    json: {\n      error: 'Missing required fields: tenant_id, scope, text'\n    }\n  }];\n}\n\n// Secret patterns to reject\nconst secretPatterns = [\n  /api[_-]?key/i,\n  /bearer\\s+[A-Za-z0-9-_.]+/i,\n  /-----BEGIN(.*?)PRIVATE KEY-----/i\n];\n\n// Check for secrets in text\nif (secretPatterns.some((p) => p.test(normalizedText))) {\n  return [{\n    json: {\n      error: 'Rejected: potential secret detected in text'\n    }\n  }];\n}\n\n// Filter facts - only keep those with confidence >= 0.75 OR source == explicit\nconst filteredFacts = (input.facts || []).filter((f) => {\n  // Check for secrets in fact fields\n  const factText = `${f.subject || ''} ${f.predicate || ''} ${f.object || ''}`;\n  if (secretPatterns.some((p) => p.test(factText))) {\n    return false;\n  }\n\n  // Apply commit rules\n  if (f.confidence >= 0.75 || input.source === 'explicit') {\n    // Reject if subject/predicate/object empty\n    if (!f.subject || !f.predicate || !f.object) {\n      return false;\n    }\n    return true;\n  }\n  return false;\n});\n\nconst requestId = input.request_id || `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;\nconst source = String(input.source || 'unknown');\nconst tags = Array.isArray(input.tags) ? input.tags : [];\nconst metadata = (input.metadata && typeof input.metadata === 'object' && !Array.isArray(input.metadata))\n  ? input.metadata\n  : {};\nconst contentHash = crypto.createHash('sha256').update(normalizedText, 'utf8').digest('hex');\n\nreturn [{\n  json: {\n    tenant_id: input.tenant_id,\n    scope: input.scope,\n    text: normalizedText,\n    facts: filteredFacts,\n    source,\n    tags,\n    metadata,\n    request_id: requestId,\n    content_hash: contentHash\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
-      "position": [450, 300],
+      "position": [
+        450,
+        300
+      ],
       "name": "Validate and Filter"
     },
     {
@@ -28,7 +34,10 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
-      "position": [650, 200],
+      "position": [
+        650,
+        200
+      ],
       "name": "Check Validation"
     },
     {
@@ -38,7 +47,10 @@
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [850, 200],
+      "position": [
+        850,
+        200
+      ],
       "name": "Error Response"
     },
     {
@@ -49,7 +61,10 @@
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
-      "position": [850, 400],
+      "position": [
+        850,
+        400
+      ],
       "name": "Insert Facts",
       "credentials": {
         "postgres": {
@@ -82,7 +97,10 @@
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1050, 400],
+      "position": [
+        1050,
+        400
+      ],
       "name": "Generate Embedding"
     },
     {
@@ -91,18 +109,26 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
-      "position": [1250, 400],
+      "position": [
+        1250,
+        400
+      ],
       "name": "Parse Embedding"
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "INSERT INTO memory_vectors (tenant_id, scope, content, embedding, created_at)\nVALUES ('{{ $input.first().json.tenant_id }}', '{{ $input.first().json.scope }}', '{{ $input.first().json.text.replace(/'/g, \"''\") }}', '{{ $input.first().json.embedding }}'::vector, NOW())\nRETURNING id;",
-        "additionalFields": {}
+        "query": "INSERT INTO memory_vectors (\n  tenant_id,\n  scope,\n  content,\n  embedding,\n  tags,\n  source,\n  content_hash,\n  metadata_jsonb,\n  created_at\n)\nVALUES (\n  $1,\n  $2,\n  $3,\n  $4::vector,\n  $5::jsonb,\n  $6,\n  $7,\n  $8::jsonb,\n  NOW()\n)\nON CONFLICT (tenant_id, scope, content_hash)\nWHERE content_hash IS NOT NULL\nDO UPDATE SET\n  content = EXCLUDED.content,\n  embedding = EXCLUDED.embedding,\n  tags = EXCLUDED.tags,\n  source = EXCLUDED.source,\n  metadata_jsonb = EXCLUDED.metadata_jsonb\nRETURNING id, content_hash;",
+        "additionalFields": {
+          "queryReplacement": "={{ [\n  $input.first().json.tenant_id,\n  $input.first().json.scope,\n  $input.first().json.text,\n  $input.first().json.embedding,\n  JSON.stringify($input.first().json.tags || []),\n  String($input.first().json.source || 'unknown'),\n  $input.first().json.content_hash,\n  JSON.stringify({\n    request_id: $input.first().json.request_id || null,\n    source: $input.first().json.source || 'unknown',\n    tags: $input.first().json.tags || [],\n    facts_count: Array.isArray($input.first().json.facts) ? $input.first().json.facts.length : 0,\n    metadata: $input.first().json.metadata || {},\n    policy: $input.first().json.policy || {}\n  })\n] }}"
+        }
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
-      "position": [1450, 400],
+      "position": [
+        1450,
+        400
+      ],
       "name": "Insert Vector",
       "credentials": {
         "postgres": {
@@ -113,11 +139,14 @@
     },
     {
       "parameters": {
-        "jsCode": "// Merge Insert Vector result with original data\nconst insertResult = $input.first().json;\nconst original = $('Parse Embedding').first().json;\n\nreturn [{\n  json: {\n    ...original,\n    id: insertResult[0]?.id || null\n  }\n}];"
+        "jsCode": "// Merge Insert Vector result with original data\nconst insertResult = $input.first().json;\nconst original = $('Parse Embedding').first().json;\nconst row = Array.isArray(insertResult) ? insertResult[0] : insertResult;\n\nreturn [{\n  json: {\n    ...original,\n    id: row?.id || null,\n    content_hash: row?.content_hash || original.content_hash || null\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
-      "position": [1620, 400],
+      "position": [
+        1620,
+        400
+      ],
       "name": "Prepare Response"
     },
     {
@@ -128,7 +157,10 @@
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
-      "position": [1750, 400],
+      "position": [
+        1750,
+        400
+      ],
       "name": "Insert Audit",
       "credentials": {
         "postgres": {
@@ -144,7 +176,10 @@
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [1950, 400],
+      "position": [
+        1950,
+        400
+      ],
       "name": "Success Response"
     }
   ],

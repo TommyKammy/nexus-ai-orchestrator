@@ -134,6 +134,7 @@ Related docs:
 - `docs/host-quick-flow.md`
 - `docs/metrics-runbook.md`
 - `docs/slo-alert-runbook.md`
+- `docs/reports/k8s-core-stack-smoke-20260305.md`
 
 ### Kubernetes (Production)
 
@@ -146,6 +147,7 @@ kubectl apply -f k8s/config/deployment/operator-deployment.yaml
 kubectl apply -f k8s/config/deployment/opa-deployment.yaml
 kubectl apply -f k8s/config/deployment/network-policies.yaml
 kubectl apply -f k8s/config/deployment/resource-quotas.yaml
+kubectl apply -f k8s/config/deployment/ingress.yaml
 
 # Create executor pool
 kubectl apply -f - <<EOF
@@ -161,7 +163,15 @@ spec:
   targetCPUUtilizationPercentage: 70
   sessionTTL: 300
 EOF
+
+# Verify core stack resources
+kubectl get deploy,svc,ingress -n executor-system
 \`\`\`
+
+Ingress note:
+- `k8s/config/deployment/ingress.yaml` assumes an ingress controller with class `nginx`.
+- Route verification for host `executor.local` requires DNS/hosts mapping or `Host: executor.local` header.
+- See `k8s/README.md` for ingress verification examples.
 
 ## API Usage
 

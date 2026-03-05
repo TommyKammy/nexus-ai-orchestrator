@@ -33,9 +33,19 @@ This directory contains the Kubernetes implementation for Executor Features 2-4:
 │  └──────────────────────────────────────────────────────────────┘  │
 └────────────────────────────────────────────────────────────────────┘
 
-Note: external traffic is terminated at Caddy and routed to n8n.
-Executor services are internal and invoked by workflows/services.
+Note: production external traffic is terminated at Caddy and routed to n8n.
+`executor-edge` Ingress is an optional Kubernetes edge path for cluster-native routing/tests.
+Executor services are internal and invoked by workflows/services in the default production flow.
 ```
+
+## Core Stack (Issue #36 Scope)
+
+The Kubernetes core stack in this repository is defined as:
+- `executor-operator` Deployment (operator control plane)
+- `redis` Deployment + Service (session/cache state)
+- `executor-load-balancer` Deployment + Service (internal execution entrypoint)
+- `opa` Deployment + Service (policy decision point)
+- `executor-edge` Ingress (edge routing to `executor-load-balancer`)
 
 ## Quick Start
 
@@ -45,6 +55,11 @@ Executor services are internal and invoked by workflows/services.
 - kubectl configured
 - Docker registry access
 - Prometheus Operator (optional, for monitoring)
+- Ingress controller that provides class `nginx` (for `executor-edge` Ingress)
+- DNS/hosts mapping for `executor.local`, or explicit `Host: executor.local` header for ingress verification
+
+If you apply the entire `k8s/config/deployment/` directory, install Prometheus Operator CRDs
+(`ServiceMonitor` and `PrometheusRule`) first.
 
 ### 2. Deploy CRDs
 
@@ -68,6 +83,7 @@ bash k8s/config/deployment/build-images.sh
 kubectl apply -f k8s/config/deployment/operator-deployment.yaml
 kubectl apply -f k8s/config/deployment/opa-deployment.yaml
 kubectl apply -f k8s/config/deployment/network-policies.yaml
+kubectl apply -f k8s/config/deployment/ingress.yaml
 ```
 
 ### 5. Create Executor Pools
@@ -112,6 +128,13 @@ kubectl get hpa -n executor-system
 
 # Check services
 kubectl get svc -n executor-system
+
+# Check core stack resources
+kubectl get deploy,svc,ingress -n executor-system
+
+# Verify ingress routing (example with port-forward)
+kubectl -n ingress-nginx port-forward svc/ingress-nginx-controller 18081:80
+curl -H "Host: executor.local" http://127.0.0.1:18081/health
 ```
 
 ## Custom Resources

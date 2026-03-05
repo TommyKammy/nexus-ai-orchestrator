@@ -335,7 +335,20 @@ OPENAI_API_KEY=your_openai_key
 - missing/invalid key returns `401 Unauthorized`
 - `/webhook/slack-command` is explicitly exempt and protected separately via `X-Internal-Auth`
 - internal-only service prefixes (`/internal/*`, `/executor/*`, `/opa/*`, `/postgres/*`, `/redis/*`) are explicitly denied at the edge (`404`)
-- webhook routes are edge rate-limited to `30 requests/minute` per source IP (`429` on excess)
+- webhook routes are edge rate-limited to `30 requests/minute` per source IP (`429` on excess), except `/webhook/slack-command`
+
+Minimal local verification:
+
+```bash
+# Expected: final line prints at least one non-200 status (typically 429)
+for i in $(seq 1 35); do
+  curl -s -o /dev/null -w "%{http_code}\n" \
+    -H "X-API-Key: ${N8N_WEBHOOK_API_KEY}" \
+    https://n8n-s-app01.tmcast.net/webhook/<your-test-webhook-path>
+done | sort | uniq -c
+```
+
+Verification report: `docs/reports/caddy-rate-limit-verification-20260305.md`
 
 ## PostgreSQL 18 Upgrade
 

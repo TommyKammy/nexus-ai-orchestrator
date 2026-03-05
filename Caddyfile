@@ -45,6 +45,7 @@ n8n-s-app01.tmcast.net {
     # Rate limit all webhook traffic at the edge (30 req/min per source IP)
     @webhook_rate_limited {
         path /webhook/*
+        not path /webhook/slack-command /webhook/slack-command/*
         rate_limit {
             zone webhook_limit {
                 key {remote_host}

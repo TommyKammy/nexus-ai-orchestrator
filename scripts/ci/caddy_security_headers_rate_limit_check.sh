@@ -20,6 +20,7 @@ require_pattern 'Referrer-Policy[[:space:]]+"strict-origin-when-cross-origin"' "
 
 require_pattern '@webhook_rate_limited' "$CADDYFILE"
 require_pattern 'path[[:space:]]+/webhook/\*' "$CADDYFILE"
+require_pattern 'not[[:space:]]+path[[:space:]]+/webhook/slack-command[[:space:]]+/webhook/slack-command/\*' "$CADDYFILE"
 require_pattern 'rate_limit' "$CADDYFILE"
 require_pattern 'zone[[:space:]]+webhook_limit' "$CADDYFILE"
 require_pattern 'key[[:space:]]+\{remote_host\}' "$CADDYFILE"
@@ -27,7 +28,10 @@ require_pattern 'events[[:space:]]+30' "$CADDYFILE"
 require_pattern 'window[[:space:]]+1m' "$CADDYFILE"
 require_pattern 'respond[[:space:]]+@webhook_rate_limited[[:space:]]+429' "$CADDYFILE"
 
-# Ensure Caddy image includes the ratelimit plugin used by Caddyfile.
-require_pattern 'github.com/mholt/caddy-ratelimit' "$CADDY_DOCKERFILE"
+# Ensure Caddy image uses pinned versions and includes pinned ratelimit plugin.
+require_pattern '^ARG CADDY_VERSION=[0-9]+\.[0-9]+\.[0-9]+$' "$CADDY_DOCKERFILE"
+require_pattern '^FROM caddy:\$\{CADDY_VERSION\}-builder AS builder$' "$CADDY_DOCKERFILE"
+require_pattern '^FROM caddy:\$\{CADDY_VERSION\}$' "$CADDY_DOCKERFILE"
+require_pattern 'github.com/mholt/caddy-ratelimit@v0\.1\.0' "$CADDY_DOCKERFILE"
 
 echo "Caddy security headers and rate-limit checks passed."

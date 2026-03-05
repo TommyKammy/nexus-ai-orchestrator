@@ -96,6 +96,7 @@ COMPOSE_BAKE=false docker compose up -d --build postgres redis policy-bundle-ser
 
 if ! wait_for_ready 360; then
   echo "n8n readiness check failed." >&2
+  docker compose logs n8n --tail 200 >&2 || true
   exit 1
 fi
 
@@ -237,6 +238,7 @@ docker compose restart n8n >/dev/null
 
 if ! wait_for_ready 360; then
   echo "n8n readiness check failed after restart." >&2
+  docker compose logs n8n --tail 200 >&2 || true
   exit 1
 fi
 

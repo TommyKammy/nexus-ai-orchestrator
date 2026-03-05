@@ -37,6 +37,15 @@ Note: external traffic is terminated at Caddy and routed to n8n.
 Executor services are internal and invoked by workflows/services.
 ```
 
+## Core Stack (Issue #36 Scope)
+
+The Kubernetes core stack in this repository is defined as:
+- `executor-operator` Deployment (operator control plane)
+- `redis` Deployment + Service (session/cache state)
+- `executor-load-balancer` Deployment + Service (internal execution entrypoint)
+- `opa` Deployment + Service (policy decision point)
+- `executor-edge` Ingress (edge routing to `executor-load-balancer`)
+
 ## Quick Start
 
 ### 1. Prerequisites
@@ -45,6 +54,9 @@ Executor services are internal and invoked by workflows/services.
 - kubectl configured
 - Docker registry access
 - Prometheus Operator (optional, for monitoring)
+
+If you apply the entire `k8s/config/deployment/` directory, install Prometheus Operator CRDs
+(`ServiceMonitor` and `PrometheusRule`) first.
 
 ### 2. Deploy CRDs
 
@@ -68,6 +80,7 @@ bash k8s/config/deployment/build-images.sh
 kubectl apply -f k8s/config/deployment/operator-deployment.yaml
 kubectl apply -f k8s/config/deployment/opa-deployment.yaml
 kubectl apply -f k8s/config/deployment/network-policies.yaml
+kubectl apply -f k8s/config/deployment/ingress.yaml
 ```
 
 ### 5. Create Executor Pools
@@ -112,6 +125,9 @@ kubectl get hpa -n executor-system
 
 # Check services
 kubectl get svc -n executor-system
+
+# Check core stack resources
+kubectl get deploy,svc,ingress -n executor-system
 ```
 
 ## Custom Resources

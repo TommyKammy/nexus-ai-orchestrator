@@ -291,6 +291,7 @@ spec:
       containers:
         - name: load-balancer
           image: executor-load-balancer:latest
+          imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

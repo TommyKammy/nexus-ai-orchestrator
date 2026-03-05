@@ -168,6 +168,11 @@ EOF
 kubectl get deploy,svc,ingress -n executor-system
 \`\`\`
 
+Ingress note:
+- `k8s/config/deployment/ingress.yaml` assumes an ingress controller with class `nginx`.
+- Route verification for host `executor.local` requires DNS/hosts mapping or `Host: executor.local` header.
+- See `k8s/README.md` for ingress verification examples.
+
 ## API Usage
 
 ### Direct Execution

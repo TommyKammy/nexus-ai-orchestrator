@@ -31,6 +31,8 @@ kubectl apply -f k8s/config/deployment/
 kubectl get deploy,svc,ingress -n executor-system
 kubectl -n executor-system port-forward svc/executor-load-balancer 18080:80
 curl -s -o - -w "\n%{http_code}\n" http://127.0.0.1:18080/health
+kubectl -n ingress-nginx port-forward svc/ingress-nginx-controller 18081:80
+curl -H "Host: executor.local" -s -o - -w "\n%{http_code}\n" http://127.0.0.1:18081/health
 ```
 
 Command outputs (excerpt):
@@ -68,6 +70,13 @@ $ curl -s -o - -w "\n%{http_code}\n" http://127.0.0.1:18080/health
 200
 ```
 
+```text
+$ curl -H "Host: executor.local" -s -o - -w "\n%{http_code}\n" http://127.0.0.1:18081/health
+{"status":"healthy","service":"load-balancer"}
+200
+```
+
 ## Notes
 - `executor-load-balancer` health endpoint connectivity was confirmed with HTTP `200`.
-- `executor-operator` and `opa` were not Ready in this clean smoke cluster due local image/policy/runtime differences; this does not block the manifest/ingress verification for issue #36.
+- Ingress routing was confirmed through nginx ingress controller using `Host: executor.local`.
+- `executor-operator` and `opa` were not Ready in this clean smoke cluster due to local image/policy/runtime differences; this does not block the manifest/ingress verification for issue #36.

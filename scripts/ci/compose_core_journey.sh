@@ -62,24 +62,40 @@ SQL
     fi
   fi
 
+  if [[ "${CURL_HELPER_STARTED:-0}" -eq 1 ]]; then
+    docker rm -f "$CURL_HELPER_CONTAINER" >/dev/null 2>&1 || true
+  fi
+
   rm -rf "$TMP_DIR"
 }
 
 trap cleanup EXIT
 
 CURL_IMAGE="${CURL_IMAGE:-curlimages/curl:8.10.1}"
+CURL_HELPER_CONTAINER="ci-curl-${RUN_ID}"
+CURL_HELPER_STARTED=0
+
 compose_network() {
   docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{println $k}}{{end}}' ai-n8n 2>/dev/null | head -n1
 }
 
-curl_internal() {
+start_curl_helper() {
   local net
   net="$(compose_network)"
   if [[ -z "$net" ]]; then
     echo "Unable to resolve Docker network for ai-n8n." >&2
     return 1
   fi
-  docker run --rm --network "$net" "${CURL_IMAGE}" "$@"
+  docker run -d --rm --name "$CURL_HELPER_CONTAINER" --network "$net" "${CURL_IMAGE}" sleep infinity >/dev/null
+  CURL_HELPER_STARTED=1
+}
+
+curl_internal() {
+  if [[ "$CURL_HELPER_STARTED" -ne 1 ]]; then
+    echo "Internal curl helper is not started." >&2
+    return 1
+  fi
+  docker exec "$CURL_HELPER_CONTAINER" curl "$@"
 }
 
 wait_for_ready() {
@@ -102,6 +118,11 @@ wait_for_ready() {
 
 echo "[1/8] Starting compose stack..."
 COMPOSE_BAKE=false docker compose up -d --build postgres redis policy-bundle-server opa n8n caddy >/dev/null
+
+if ! start_curl_helper; then
+  echo "Failed to start internal curl helper container." >&2
+  exit 1
+fi
 
 if ! wait_for_ready 360; then
   echo "n8n readiness check failed." >&2

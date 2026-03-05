@@ -13,26 +13,20 @@ command -v jq >/dev/null 2>&1 || {
   exit 1
 }
 
+source "${ROOT_DIR}/scripts/ci/security_scan_common.sh"
+
 ARTIFACT_DIR="${ROOT_DIR}/artifacts/security"
 REPORT_PATH="${ARTIFACT_DIR}/dependency-vuln-report.json"
 REPORT_PATH_IN_CONTAINER="artifacts/security/dependency-vuln-report.json"
 mkdir -p "${ARTIFACT_DIR}"
 
 # Keep scan focused on source/config artifacts and avoid runtime data directories.
-docker run --rm -v "${ROOT_DIR}:/workspace" -w /workspace aquasec/trivy:0.61.0 fs \
+run_trivy_fs "${ROOT_DIR}" \
   --scanners vuln \
   --severity MEDIUM,HIGH,CRITICAL \
   --format json \
   --output "${REPORT_PATH_IN_CONTAINER}" \
-  --exit-code 0 \
-  --skip-dirs artifacts \
-  --skip-dirs caddy_data \
-  --skip-dirs caddy_config \
-  --skip-dirs logs \
-  --skip-dirs postgres \
-  --skip-dirs redis \
-  --skip-dirs n8n \
-  .
+  --exit-code 0
 
 critical_count="$(jq '[((.Results // [])[]?.Vulnerabilities // [])[]? | select(.Severity=="CRITICAL")] | length' "${REPORT_PATH}")"
 high_count="$(jq '[((.Results // [])[]?.Vulnerabilities // [])[]? | select(.Severity=="HIGH")] | length' "${REPORT_PATH}")"

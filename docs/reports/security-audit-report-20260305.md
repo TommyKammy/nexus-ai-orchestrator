@@ -46,8 +46,11 @@ Because Medium+ findings are zero, no additional risk-acceptance issue is requir
 ## Verification Commands
 
 ```bash
-bash scripts/ci/lint.sh
-bash scripts/ci/test.sh
+pnpm -r --if-present lint
+pnpm -r --if-present typecheck
+pnpm -r --if-present test
+pnpm -r --if-present build
+pnpm e2e
 bash scripts/ci/security_scan.sh
 ```
 

@@ -68,7 +68,6 @@ SQL
 trap cleanup EXIT
 
 CURL_IMAGE="${CURL_IMAGE:-curlimages/curl:8.10.1}"
-
 compose_network() {
   docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{println $k}}{{end}}' ai-n8n 2>/dev/null | head -n1
 }
@@ -89,7 +88,7 @@ wait_for_ready() {
   start="$(date +%s)"
 
   while true; do
-    if curl_internal -sS -o /dev/null -w '%{http_code}' "http://n8n:5678/healthz/readiness" | grep -q '^200$'; then
+    if curl_internal -sS -o /dev/null -w '%{http_code}' "http://ai-n8n:5678/healthz/readiness" | grep -q '^200$'; then
       return 0
     fi
     now="$(date +%s)"
@@ -280,7 +279,7 @@ post_webhook() {
   local response http_code body
   response="$(
     curl_internal -sS -w $'\n%{http_code}' -H "Content-Type: application/json" \
-      -X POST "http://n8n:5678/webhook/${path}" \
+      -X POST "http://ai-n8n:5678/webhook/${path}" \
       -d "$payload"
   )"
   http_code="${response##*$'\n'}"

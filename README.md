@@ -132,6 +132,8 @@ Related docs:
 - `docs/policy-registry-troubleshooting.md`
 - `docs/postgres-data-layout-migration.md`
 - `docs/host-quick-flow.md`
+- `docs/metrics-runbook.md`
+- `docs/slo-alert-runbook.md`
 
 ### Kubernetes (Production)
 

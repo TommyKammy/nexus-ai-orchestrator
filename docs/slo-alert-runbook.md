@@ -6,17 +6,18 @@ Define operational SLO targets, alert criteria, and first-response actions for o
 ## SLI / SLO Definitions
 
 ### Availability
-- SLI: successful executor API responses ratio
-  - Formula: `1 - (5xx responses / total requests)`
+- SLI: successful executor API responses ratio (treating 4xx/5xx as unsuccessful with current metric)
+  - Formula: `1 - (executor_http_request_errors_total / executor_http_requests_total)`
 - SLO target:
   - 99.9% monthly availability for executor API
 
 ### Latency
 - SLI: request latency from `executor_http_request_latency_ms_avg`
-- SLO targets:
+- SLO targets (current instrumentation):
+  - sustained average threshold: < 500ms over 10m
+- Future SLO targets (require histogram-based latency metric; not yet implemented):
   - p50 proxy target: < 300ms
   - p95 proxy target: < 800ms
-  - sustained average threshold: < 500ms over 10m
 
 ### Error rate
 - SLI: `executor_http_request_errors_total / executor_http_requests_total`
@@ -27,7 +28,7 @@ Define operational SLO targets, alert criteria, and first-response actions for o
 
 ### Critical
 - Executor API unavailable:
-  - condition: no healthy executor scrape target for > 2m
+  - condition: no healthy executor scrape target for > 1m
 - OPA policy engine down:
   - condition: `sum(up{namespace="executor-system",pod=~"opa-.*"}) == 0` for > 2m
 
@@ -39,9 +40,9 @@ Define operational SLO targets, alert criteria, and first-response actions for o
 - Session migration failures:
   - condition: `rate(executor_session_migration_failures_total[5m]) > 0`
 - Elevated executor error ratio:
-  - condition: HTTP error ratio > 5% for > 10m
+  - condition: planned (PrometheusRule not yet implemented)
 - Elevated executor latency:
-  - condition: request latency average > 500ms for > 10m
+  - condition: planned (PrometheusRule not yet implemented)
 
 ## Mapping to Monitoring Config
 Source file: `k8s/config/deployment/prometheus-monitoring.yaml`
@@ -53,6 +54,8 @@ Source file: `k8s/config/deployment/prometheus-monitoring.yaml`
 | CPU utilization | `ExecutorHighCPUUtilization` |
 | Session migration failures | `ExecutorSessionMigrationFailed` |
 | OPA availability | `OpaPolicyEngineDown` |
+| Elevated executor error ratio | planned (PrometheusRule not yet implemented) |
+| Elevated executor latency | planned (PrometheusRule not yet implemented) |
 | Scrape paths | `ServiceMonitor` entries (`executor-pools`, `executor-load-balancer`, `opa-policy`) |
 
 ## On-call First Response
@@ -78,7 +81,7 @@ Source file: `k8s/config/deployment/prometheus-monitoring.yaml`
 1. If pool pressure is high, scale executor pools up.
 2. If OPA is unavailable, fail mode decision:
    - maintain current fail-open/fail-closed policy mode as documented for the environment.
-3. If error rate spikes due deploy regression, roll back the latest release.
+3. If error rate spikes due to a deploy regression, roll back the latest release.
 
 ## Escalation
 1. `sev-1` conditions (availability major impact) -> page platform owner immediately.

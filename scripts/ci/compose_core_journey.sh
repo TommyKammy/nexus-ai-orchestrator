@@ -64,8 +64,19 @@ SQL
 
 trap cleanup EXIT
 
+CURL_IMAGE="${CURL_IMAGE:-curlimages/curl:8.10.1}"
+compose_network() {
+  docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{println $k}}{{end}}' ai-n8n 2>/dev/null | head -n1
+}
+
 curl_internal() {
-  docker exec ai-caddy curl -sS "$@"
+  local net
+  net="$(compose_network)"
+  if [[ -z "$net" ]]; then
+    echo "Unable to resolve Docker network for ai-n8n." >&2
+    return 1
+  fi
+  docker run --rm --network "$net" "${CURL_IMAGE}" "$@"
 }
 
 wait_for_ready() {
@@ -74,7 +85,7 @@ wait_for_ready() {
   start="$(date +%s)"
 
   while true; do
-    if curl_internal -o /dev/null -w '%{http_code}' "http://n8n:5678/healthz/readiness" | grep -q '^200$'; then
+    if curl_internal -sS -o /dev/null -w '%{http_code}' "http://n8n:5678/healthz/readiness" | grep -q '^200$'; then
       return 0
     fi
     now="$(date +%s)"
@@ -87,12 +98,7 @@ wait_for_ready() {
 }
 
 echo "[1/8] Starting compose stack..."
-docker compose up -d postgres redis policy-bundle-server opa n8n caddy >/dev/null
-
-if ! docker exec ai-caddy sh -lc 'command -v curl >/dev/null 2>&1'; then
-  echo "curl is required in ai-caddy container for webhook checks." >&2
-  exit 1
-fi
+COMPOSE_BAKE=false docker compose up -d --build postgres redis policy-bundle-server opa n8n caddy >/dev/null
 
 if ! wait_for_ready 360; then
   echo "n8n readiness check failed." >&2
@@ -269,7 +275,7 @@ post_webhook() {
   local payload="$2"
   local response http_code body
   response="$(
-    curl_internal -w $'\n%{http_code}' -H "Content-Type: application/json" \
+    curl_internal -sS -w $'\n%{http_code}' -H "Content-Type: application/json" \
       -X POST "http://n8n:5678/webhook/${path}" \
       -d "$payload"
   )"

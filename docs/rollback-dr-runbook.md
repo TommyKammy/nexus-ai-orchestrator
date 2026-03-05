@@ -6,7 +6,7 @@ Define a single operational playbook for rollback and DR decisions across compos
 
 ## Targets
 
-- RTO target: 30 minutes for compose service recovery, 45 minutes for k8s control-plane workload recovery.
+- RTO target: 30 minutes for compose service recovery, 45 minutes for k8s namespace workload recovery.
 - RPO target: 15 minutes (backup interval or last successful dump).
 
 ## Trigger Conditions
@@ -59,16 +59,14 @@ Preconditions:
 
 Cautions:
 - Creates backup under `backups/executor-*` unless `--skip-backup`.
-- On failure, internal `rollback()` restores latest backup and restarts executor.
+- Writes/updates host-level settings (cron entry, `/etc/logrotate.d/executor-monitor`, and possibly `/etc/docker/daemon.json`).
+- `rollback()` restores only `executor/` from latest backup and restarts executor; it does not restore all backup artifacts automatically.
 
 ## Recovery Procedures
 
 ## 1) Compose Rollback Path
 
-1. Create/confirm latest backup:
-```bash
-bash scripts/n8n-upgrade-backup.sh
-```
+1. Select a known-good backup created before the failed change.
 2. Roll back from selected backup:
 ```bash
 bash scripts/n8n-rollback.sh ./backups/n8n-upgrade-YYYYMMDD-HHMMSS
@@ -80,6 +78,7 @@ curl -fsS http://127.0.0.1:8181/health
 # n8n readiness from n8n network namespace
 docker run --rm --network container:ai-n8n curlimages/curl:8.10.1 -fsS http://localhost:5678/healthz/readiness
 ```
+4. If no known-good backup exists, stop and escalate incident command instead of creating a new backup from potentially broken state.
 
 ## 2) K8s Recovery Path
 

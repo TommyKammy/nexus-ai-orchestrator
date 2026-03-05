@@ -135,6 +135,7 @@ Related docs:
 - `docs/metrics-runbook.md`
 - `docs/slo-alert-runbook.md`
 - `docs/reports/k8s-core-stack-smoke-20260305.md`
+- `docs/reports/k8s-smoke-load-suite-20260305.md`
 
 ### Kubernetes (Production)
 

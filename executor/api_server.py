@@ -101,8 +101,31 @@ class ExecutorHandler(BaseHTTPRequestHandler):
     }
     
     def log_message(self, format, *args):
-        """Suppress default access log; structured logs are emitted explicitly."""
+        """Suppress default access log; application uses structured logging instead."""
         return
+
+    def log_error(self, format, *args):
+        """Emit structured logs for low-level HTTP/server errors."""
+        try:
+            message = format % args if args else str(format)
+        except Exception:
+            message = str(format)
+
+        remote_addr = ""
+        if getattr(self, "client_address", None):
+            remote_addr = str(self.client_address[0])
+
+        self._log_json(
+            "error",
+            {
+                "event": "http_server_error",
+                "message": message,
+                "method": getattr(self, "command", ""),
+                "path": getattr(self, "_request_path", getattr(self, "path", "")),
+                "remote_addr": remote_addr,
+                "request_id": getattr(self, "request_id", ""),
+            },
+        )
 
     def _assign_request_id(self):
         """Adopt inbound request ID or generate a new one."""
@@ -264,12 +287,21 @@ class ExecutorHandler(BaseHTTPRequestHandler):
     
     def do_OPTIONS(self):
         """Handle CORS preflight requests."""
+        parsed = urlparse(self.path)
+        path = parsed.path
+        self._assign_request_id()
+        self._request_path = path
+        self._request_started = time.monotonic()
+        self.response_status_code = 0
+
         self.send_response(200)
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type, X-API-Key, X-Request-ID')
+        self.send_header("X-Request-ID", self.request_id)
         self._send_security_headers()
         self.end_headers()
+        self._log_access("OPTIONS", path)
     
     def do_GET(self):
         """Handle GET requests."""

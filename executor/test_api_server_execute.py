@@ -95,6 +95,17 @@ def _get_text(port: int, path: str):
     return response.status, body
 
 
+def _options(port: int, path: str, headers: Optional[dict] = None):
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    conn.request("OPTIONS", path, headers=headers or {})
+    response = conn.getresponse()
+    response.read()
+    response_headers = dict(response.getheaders())
+    status = response.status
+    conn.close()
+    return status, response_headers
+
+
 def test_execute_returns_structured_output():
     with patch("executor.api_server.API_KEY", None), patch(
         "executor.api_server.template_manager.get_sandbox_kwargs", return_value={}
@@ -214,6 +225,21 @@ def test_execute_emits_structured_request_log(caplog):
         and entry.get("latency_ms") is not None
     ]
     assert matched, "expected structured request log with request_id/path/status/latency_ms"
+
+
+def test_options_echoes_request_id_header():
+    with patch("executor.api_server.API_KEY", None):
+        server, thread = _start_server()
+        try:
+            status, headers = _options(server.server_port, "/execute", {"X-Request-ID": "opt-req-1"})
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    assert status == 200
+    assert headers["X-Request-ID"] == "opt-req-1"
+    assert headers["Access-Control-Allow-Headers"] == "Content-Type, X-API-Key, X-Request-ID"
 
 
 def test_execute_missing_fields_returns_error():

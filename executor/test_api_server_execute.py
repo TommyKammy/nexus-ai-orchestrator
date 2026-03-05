@@ -488,10 +488,20 @@ def test_policy_metrics_exposed_for_decisions_errors_and_latency():
         "latency_ms_sum": 0.0,
         "latency_ms_count": 0,
     }
+    baseline_request_metrics = {
+        "total": 0,
+        "errors": 0,
+        "latency_ms_sum": 0.0,
+        "latency_ms_count": 0,
+        "methods": {},
+        "statuses": {},
+    }
 
     with patch("executor.api_server.API_KEY", None), patch(
         "executor.api_server.template_manager.get_sandbox_kwargs", return_value={}
     ), patch("executor.api_server.POLICY_METRICS", baseline_metrics), patch(
+        "executor.api_server.REQUEST_METRICS", baseline_request_metrics
+    ), patch(
         "executor.api_server.policy_client.evaluate", side_effect=policy_responses
     ), patch(
         "executor.api_server.policy_client.enforce", side_effect=lambda result: bool(result.get("allow"))
@@ -536,6 +546,7 @@ def test_policy_metrics_exposed_for_decisions_errors_and_latency():
 
     assert metrics_status == 200
     policy_metrics = metrics_payload["metrics"]["policy"]
+    request_metrics = metrics_payload["metrics"]["requests"]
     assert policy_metrics["total"] == 3
     assert policy_metrics["allow"] == 2
     assert policy_metrics["deny"] == 1
@@ -543,6 +554,11 @@ def test_policy_metrics_exposed_for_decisions_errors_and_latency():
     assert policy_metrics["errors"] == 1
     assert policy_metrics["latency_ms_count"] == 3
     assert round(policy_metrics["latency_ms_sum"], 3) == 60.0
+    assert request_metrics["total"] == 3
+    assert request_metrics["errors"] == 1
+    assert request_metrics["methods"]["POST"] == 3
+    assert request_metrics["statuses"]["200"] == 2
+    assert request_metrics["statuses"]["403"] == 1
 
     assert prom_status == 200
     assert "executor_policy_eval_total 3" in prom_body
@@ -553,3 +569,9 @@ def test_policy_metrics_exposed_for_decisions_errors_and_latency():
     assert "executor_policy_eval_latency_ms_count 3" in prom_body
     assert "executor_policy_eval_latency_ms_avg 20.000" in prom_body
     assert "executor_policy_eval_latency_ms_avg " in prom_body
+    assert "executor_http_requests_total 4" in prom_body
+    assert "executor_http_request_errors_total 1" in prom_body
+    assert 'executor_http_requests_by_method_total{method="GET"} 1' in prom_body
+    assert 'executor_http_requests_by_method_total{method="POST"} 3' in prom_body
+    assert 'executor_http_requests_by_status_total{status="200"} 3' in prom_body
+    assert 'executor_http_requests_by_status_total{status="403"} 1' in prom_body

@@ -14,7 +14,7 @@ spec:
       app.kubernetes.io/component: pool
   endpoints:
     - port: http
-      path: /metrics
+      path: /metrics/prometheus
       interval: 15s
 ---
 apiVersion: monitoring.coreos.com/v1

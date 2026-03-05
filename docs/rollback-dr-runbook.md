@@ -51,16 +51,21 @@ Cautions:
 
 ### `scripts/deploy-executor-production.sh`
 
-Use for executor deployment and automated rollback on failed health checks.
+Use for executor deployment. Its internal rollback is triggered only when `wait_for_service` times out after deploy; it is not a full automatic rollback for every unhealthy signal.
 
 Preconditions:
-- Docker + Docker Compose available.
-- Privilege for monitoring/logrotate setup where needed.
+- Docker + Docker Compose available on the target host.
+- Root or passwordless sudo privileges for host-level changes (`/etc/logrotate.d`, optional `/etc/docker/daemon.json`).
+- Change window approval when Docker daemon configuration may be modified.
 
 Cautions:
 - Creates backup under `backups/executor-*` unless `--skip-backup`.
-- Writes/updates host-level settings (cron entry, `/etc/logrotate.d/executor-monitor`, and possibly `/etc/docker/daemon.json`).
-- `rollback()` restores only `executor/` from latest backup and restarts executor; it does not restore all backup artifacts automatically.
+- Installs/updates a monitor entry in the invoking user's crontab.
+- Writes `/etc/logrotate.d/executor-monitor`.
+- May create `/etc/docker/daemon.json`; Docker restart is required to apply daemon settings.
+- `rollback()` restores only `executor/` from latest backup and restarts executor.
+- `rollback()` does not restore other backup artifacts (for example `docker-compose.executor.yml`) and does not revert host-level changes (crontab/logrotate/daemon config).
+- `health_check()` warning responses do not trigger automatic rollback; operator action is required.
 
 ## Recovery Procedures
 

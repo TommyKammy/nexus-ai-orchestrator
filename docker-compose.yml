@@ -129,7 +129,10 @@ services:
     working_dir: /workspace
 
   caddy:
-    image: caddy:latest
+    build:
+      context: ./docker/caddy
+      dockerfile: Dockerfile
+    image: ai-caddy:local
     container_name: ai-caddy
     restart: always
     ports:

@@ -8,5 +8,6 @@ bash scripts/ci/audit_append_workflow_check.sh
 bash scripts/ci/executor_dispatch_workflow_check.sh
 bash scripts/ci/webhook_auth_check.sh
 bash scripts/ci/caddy_routing_baseline_check.sh
+bash scripts/ci/caddy_security_headers_rate_limit_check.sh
 bash scripts/ci/workflow_schema_check.sh
 python3 scripts/validate_slack_workflows.py n8n/workflows-v3

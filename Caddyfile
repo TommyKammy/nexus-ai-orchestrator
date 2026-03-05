@@ -32,16 +32,6 @@ n8n-s-app01.tmcast.net {
         }
     }
 
-    # Block unauthorized webhook requests (API key protection for all other webhooks)
-    @unauthorized {
-        path /webhook/*
-        not header X-API-Key {env.N8N_WEBHOOK_API_KEY}
-    }
-
-    respond @unauthorized 401 {
-        body "Unauthorized: Invalid or missing API key"
-    }
-
     # Rate limit all webhook traffic at the edge (30 req/min per source IP)
     @webhook_rate_limited {
         path /webhook/*
@@ -57,6 +47,16 @@ n8n-s-app01.tmcast.net {
 
     respond @webhook_rate_limited 429 {
         body "Too Many Requests"
+    }
+
+    # Block unauthorized webhook requests (API key protection for all other webhooks)
+    @unauthorized {
+        path /webhook/*
+        not header X-API-Key {env.N8N_WEBHOOK_API_KEY}
+    }
+
+    respond @unauthorized 401 {
+        body "Unauthorized: Invalid or missing API key"
     }
 
     # Lightweight policy registry UI

@@ -27,6 +27,14 @@ require_pattern 'key[[:space:]]+\{remote_host\}' "$CADDYFILE"
 require_pattern 'events[[:space:]]+30' "$CADDYFILE"
 require_pattern 'window[[:space:]]+1m' "$CADDYFILE"
 require_pattern 'respond[[:space:]]+@webhook_rate_limited[[:space:]]+429' "$CADDYFILE"
+require_pattern 'respond[[:space:]]+@unauthorized[[:space:]]+401' "$CADDYFILE"
+
+rate_limit_respond_line="$(grep -En 'respond[[:space:]]+@webhook_rate_limited[[:space:]]+429' "$CADDYFILE" | head -n1 | cut -d: -f1)"
+unauthorized_respond_line="$(grep -En 'respond[[:space:]]+@unauthorized[[:space:]]+401' "$CADDYFILE" | head -n1 | cut -d: -f1)"
+if [[ -n "$rate_limit_respond_line" && -n "$unauthorized_respond_line" && "$rate_limit_respond_line" -ge "$unauthorized_respond_line" ]]; then
+  echo "Webhook rate-limit responder must be declared before unauthorized responder." >&2
+  exit 1
+fi
 
 # Ensure Caddy image uses pinned versions and includes pinned ratelimit plugin.
 require_pattern '^ARG CADDY_VERSION=[0-9]+\.[0-9]+\.[0-9]+$' "$CADDY_DOCKERFILE"

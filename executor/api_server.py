@@ -101,8 +101,60 @@ class ExecutorHandler(BaseHTTPRequestHandler):
     }
     
     def log_message(self, format, *args):
-        """Override to use our logger."""
-        logger.info(f"{self.address_string()} - {format % args}")
+        """Suppress default access log; application uses structured logging instead."""
+        return
+
+    def log_error(self, format, *args):
+        """Emit structured logs for low-level HTTP/server errors."""
+        try:
+            message = format % args if args else str(format)
+        except Exception:
+            message = str(format)
+
+        remote_addr = ""
+        if getattr(self, "client_address", None):
+            remote_addr = str(self.client_address[0])
+
+        self._log_json(
+            "error",
+            {
+                "event": "http_server_error",
+                "message": message,
+                "method": getattr(self, "command", ""),
+                "path": getattr(self, "_request_path", getattr(self, "path", "")),
+                "remote_addr": remote_addr,
+                "request_id": getattr(self, "request_id", ""),
+            },
+        )
+
+    def _assign_request_id(self):
+        """Adopt inbound request ID or generate a new one."""
+        inbound = self.headers.get("X-Request-ID", "")
+        inbound = inbound.strip() if inbound else ""
+        self.request_id = inbound or str(uuid.uuid4())
+
+    def _request_latency_ms(self) -> float:
+        started = getattr(self, "_request_started", None)
+        if started is None:
+            return 0.0
+        return (time.monotonic() - started) * 1000.0
+
+    def _log_json(self, level: str, payload: Dict[str, Any]):
+        log_fn = getattr(logger, level, logger.info)
+        log_fn(json.dumps(payload, separators=(",", ":"), sort_keys=True))
+
+    def _log_access(self, method: str, path: str):
+        self._log_json(
+            "info",
+            {
+                "event": "request_complete",
+                "latency_ms": round(self._request_latency_ms(), 3),
+                "method": method,
+                "path": path,
+                "request_id": getattr(self, "request_id", ""),
+                "status": int(getattr(self, "response_status_code", 0)),
+            },
+        )
     
     def _check_auth(self) -> bool:
         """
@@ -118,8 +170,22 @@ class ExecutorHandler(BaseHTTPRequestHandler):
         if auth_header == API_KEY:
             return True
         
-        logger.warning(f"Authentication failed from {self.client_address[0]}")
+        self._log_json(
+            "warning",
+            {
+                "event": "auth_failed",
+                "method": getattr(self, "command", ""),
+                "path": getattr(self, "_request_path", ""),
+                "request_id": getattr(self, "request_id", ""),
+                "source_ip": self.client_address[0],
+                "status": 401,
+            },
+        )
         return False
+
+    def send_response(self, code: int, message: Optional[str] = None):
+        self.response_status_code = code
+        super().send_response(code, message)
     
     def _send_security_headers(self):
         """Send security headers with response."""
@@ -190,7 +256,18 @@ class ExecutorHandler(BaseHTTPRequestHandler):
     def _send_error(self, message: str, status: int = 400, log_error: bool = True):
         """Send error response."""
         if log_error:
-            logger.warning(f"Error {status}: {message}")
+            self._log_json(
+                "warning",
+                {
+                    "error": message,
+                    "event": "request_error",
+                    "latency_ms": round(self._request_latency_ms(), 3),
+                    "method": getattr(self, "command", ""),
+                    "path": getattr(self, "_request_path", ""),
+                    "request_id": getattr(self, "request_id", ""),
+                    "status": int(status),
+                },
+            )
         
         # Sanitize error message for production
         sanitized = sanitize_error(message)
@@ -210,45 +287,84 @@ class ExecutorHandler(BaseHTTPRequestHandler):
     
     def do_OPTIONS(self):
         """Handle CORS preflight requests."""
+        parsed = urlparse(self.path)
+        path = parsed.path
+        self._assign_request_id()
+        self._request_path = path
+        self._request_started = time.monotonic()
+        self.response_status_code = 0
+
         self.send_response(200)
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type, X-API-Key, X-Request-ID')
+        self.send_header("X-Request-ID", self.request_id)
         self._send_security_headers()
         self.end_headers()
+        self._log_access("OPTIONS", path)
     
     def do_GET(self):
         """Handle GET requests."""
-        self.request_id = self.headers.get("X-Request-ID", str(uuid.uuid4()))
-
-        # Check authentication
-        if not self._check_auth():
-            self._send_error("Unauthorized", 401)
-            return
-        
         parsed = urlparse(self.path)
         path = parsed.path
+        self._assign_request_id()
+        self._request_path = path
+        self._request_started = time.monotonic()
+        self.response_status_code = 0
 
-        self._dispatch_get(path)
+        try:
+            if not self._check_auth():
+                self._send_error("Unauthorized", 401)
+                return
+            self._dispatch_get(path)
+        except Exception as e:
+            self._log_json(
+                "error",
+                {
+                    "error": str(e),
+                    "event": "request_exception",
+                    "latency_ms": round(self._request_latency_ms(), 3),
+                    "method": "GET",
+                    "path": path,
+                    "request_id": self.request_id,
+                    "status": 500,
+                },
+            )
+            self._send_error(f"Internal error: {sanitize_error(str(e))}", 500, log_error=False)
+        finally:
+            self._log_access("GET", path)
     
     def do_POST(self):
         """Handle POST requests."""
-        self.request_id = self.headers.get("X-Request-ID", str(uuid.uuid4()))
-
-        # Check authentication
-        if not self._check_auth():
-            self._send_error("Unauthorized", 401)
-            return
-        
         parsed = urlparse(self.path)
         path = parsed.path
-        body = self._read_body()
-        
+        self._assign_request_id()
+        self._request_path = path
+        self._request_started = time.monotonic()
+        self.response_status_code = 0
+
         try:
+            if not self._check_auth():
+                self._send_error("Unauthorized", 401)
+                return
+            body = self._read_body()
             self._dispatch_post(path, body)
         except Exception as e:
-            logger.error(f"Request failed: {e}")
-            self._send_error(f"Internal error: {sanitize_error(str(e))}", 500)
+            self._log_json(
+                "error",
+                {
+                    "error": str(e),
+                    "event": "request_exception",
+                    "latency_ms": round(self._request_latency_ms(), 3),
+                    "method": "POST",
+                    "path": path,
+                    "request_id": self.request_id,
+                    "status": 500,
+                },
+            )
+            self._send_error(f"Internal error: {sanitize_error(str(e))}", 500, log_error=False)
+        finally:
+            self._log_access("POST", path)
 
     def _dispatch_get(self, path: str):
         handler_name = self.GET_ROUTES.get(path)

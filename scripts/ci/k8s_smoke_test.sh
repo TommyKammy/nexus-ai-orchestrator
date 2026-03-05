@@ -35,18 +35,28 @@ cleanup() {
 trap cleanup EXIT
 
 if [[ -z "${K8S_TARGET_URL:-}" ]]; then
-  kubectl -n "${NAMESPACE}" port-forward "svc/${SERVICE_NAME}" "${LOCAL_PORT}:80" >/tmp/k8s-smoke-port-forward.log 2>&1 &
+  PORT_FORWARD_LOG="/tmp/k8s-smoke-port-forward.log"
+  kubectl -n "${NAMESPACE}" port-forward "svc/${SERVICE_NAME}" "${LOCAL_PORT}:80" >"${PORT_FORWARD_LOG}" 2>&1 &
   PF_PID=$!
+  READINESS_OK=0
   for _ in $(seq 1 20); do
-    if curl -fsS "${BASE_URL}/health" >/dev/null 2>&1; then
+    if curl --connect-timeout 3 --max-time 5 -fsS "${BASE_URL}/health" >/dev/null 2>&1; then
+      READINESS_OK=1
       break
     fi
     sleep 1
   done
+  if [[ "${READINESS_OK}" -ne 1 ]]; then
+    echo "Smoke test failed: /health not reachable at ${BASE_URL}/health after port-forward wait." >&2
+    if [[ -f "${PORT_FORWARD_LOG}" ]]; then
+      sed 's/^/  /' "${PORT_FORWARD_LOG}" >&2 || cat "${PORT_FORWARD_LOG}" >&2
+    fi
+    exit 1
+  fi
 fi
 
-HEALTH_HTTP_CODE="$(curl -sS -o /tmp/k8s-smoke-health.json -w '%{http_code}' "${BASE_URL}/health")"
-STATS_HTTP_CODE="$(curl -sS -o /tmp/k8s-smoke-stats.json -w '%{http_code}' "${BASE_URL}/stats")"
+HEALTH_HTTP_CODE="$(curl --connect-timeout 5 --max-time 10 -sS -o /tmp/k8s-smoke-health.json -w '%{http_code}' "${BASE_URL}/health" || echo '000')"
+STATS_HTTP_CODE="$(curl --connect-timeout 5 --max-time 10 -sS -o /tmp/k8s-smoke-stats.json -w '%{http_code}' "${BASE_URL}/stats" || echo '000')"
 
 if [[ "${HEALTH_HTTP_CODE}" != "200" ]]; then
   echo "Smoke test failed: /health returned HTTP ${HEALTH_HTTP_CODE}" >&2

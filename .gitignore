@@ -54,6 +54,7 @@ WORKLOG-*
 
 # Worklog directory
 worklog/
+artifacts/
 
 # Model files (PCA)
 *.pkl

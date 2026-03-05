@@ -26,7 +26,7 @@ jobs:
           cluster_name: ci-k8s-tests
           wait: 120s
 
-      - name: Build and load load-balancer image for kind
+      - name: Build and load test images for kind
         run: |
           set -euo pipefail
           mkdir -p /tmp/lbbuild/k8s/controllers
@@ -35,24 +35,37 @@ jobs:
           cp k8s/controllers/load_balancer_server.py /tmp/lbbuild/k8s/controllers/
           docker build -t executor-load-balancer:ci -f /tmp/lbbuild/Dockerfile /tmp/lbbuild
           kind load docker-image executor-load-balancer:ci --name ci-k8s-tests
+          mkdir -p /tmp/opbuild/k8s/controllers
+          cp k8s/config/deployment/Dockerfile.operator /tmp/opbuild/Dockerfile
+          cp k8s/controllers/operator.py /tmp/opbuild/k8s/controllers/
+          docker build -t executor-operator:ci -f /tmp/opbuild/Dockerfile /tmp/opbuild
+          kind load docker-image executor-operator:ci --name ci-k8s-tests
 
       - name: Deploy manifests
         run: |
           set -euo pipefail
           kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/v0.75.2/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml
           kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/v0.75.2/example/prometheus-operator-crd/monitoring.coreos.com_prometheusrules.yaml
+          kubectl wait --for=condition=Established crd/servicemonitors.monitoring.coreos.com --timeout=120s
+          kubectl wait --for=condition=Established crd/prometheusrules.monitoring.coreos.com --timeout=120s
           kubectl apply -f k8s/config/crd/executor-crd.yaml
+          kubectl wait --for=condition=Established crd/executorpools.executor.ai-orchestrator.io --timeout=120s
+          kubectl wait --for=condition=Established crd/executorsessions.executor.ai-orchestrator.io --timeout=120s
           kubectl apply -f k8s/config/deployment/
+          kubectl -n executor-system set image deployment/executor-operator operator=executor-operator:ci
           kubectl -n executor-system set image deployment/executor-load-balancer load-balancer=executor-load-balancer:ci
+          kubectl -n executor-system patch deployment executor-operator --type=merge \
+            -p '{"spec":{"template":{"spec":{"containers":[{"name":"operator","imagePullPolicy":"IfNotPresent"}]}}}}'
           kubectl -n executor-system patch deployment executor-load-balancer --type=merge \
             -p '{"spec":{"template":{"spec":{"containers":[{"name":"load-balancer","imagePullPolicy":"IfNotPresent"}]}}}}'
           kubectl -n executor-system rollout status deployment/redis --timeout=180s
+          kubectl -n executor-system rollout status deployment/executor-operator --timeout=180s
           kubectl -n executor-system rollout status deployment/executor-load-balancer --timeout=180s
 
       - name: Run k8s smoke test
         env:
           K8S_TEST_ARTIFACT_DIR: artifacts/k8s-tests
-          SMOKE_REQUIRED_DEPLOYMENTS: "redis executor-load-balancer"
+          SMOKE_REQUIRED_DEPLOYMENTS: "redis executor-load-balancer executor-operator"
         run: bash scripts/ci/k8s_smoke_test.sh
 
       - name: Run k8s load test

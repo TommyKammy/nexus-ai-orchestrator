@@ -56,6 +56,7 @@ REQUEST_METRICS = {
     "methods": {},
     "statuses": {},
 }
+REQUEST_METRIC_EXCLUDE_PATHS = {"/metrics", "/metrics/prometheus", "/health"}
 
 
 def sanitize_error(error: str) -> str:
@@ -155,14 +156,15 @@ class ExecutorHandler(BaseHTTPRequestHandler):
         status_code = int(getattr(self, "response_status_code", 0))
         latency_ms = round(self._request_latency_ms(), 3)
 
-        REQUEST_METRICS["total"] += 1
-        REQUEST_METRICS["latency_ms_sum"] += latency_ms
-        REQUEST_METRICS["latency_ms_count"] += 1
-        REQUEST_METRICS["methods"][method] = REQUEST_METRICS["methods"].get(method, 0) + 1
-        status_key = str(status_code)
-        REQUEST_METRICS["statuses"][status_key] = REQUEST_METRICS["statuses"].get(status_key, 0) + 1
-        if status_code >= 400:
-            REQUEST_METRICS["errors"] += 1
+        if path not in REQUEST_METRIC_EXCLUDE_PATHS:
+            REQUEST_METRICS["total"] += 1
+            REQUEST_METRICS["latency_ms_sum"] += latency_ms
+            REQUEST_METRICS["latency_ms_count"] += 1
+            REQUEST_METRICS["methods"][method] = REQUEST_METRICS["methods"].get(method, 0) + 1
+            status_key = str(status_code)
+            REQUEST_METRICS["statuses"][status_key] = REQUEST_METRICS["statuses"].get(status_key, 0) + 1
+            if status_code >= 400:
+                REQUEST_METRICS["errors"] += 1
 
         self._log_json(
             "info",
@@ -287,6 +289,10 @@ class ExecutorHandler(BaseHTTPRequestHandler):
             "# HELP executor_http_request_latency_ms_avg Average HTTP request latency in ms",
             "# TYPE executor_http_request_latency_ms_avg gauge",
             f"executor_http_request_latency_ms_avg {request_latency_avg:.3f}",
+            "# HELP executor_http_requests_by_method_total Total number of HTTP requests grouped by method",
+            "# TYPE executor_http_requests_by_method_total counter",
+            "# HELP executor_http_requests_by_status_total Total number of HTTP requests grouped by response status",
+            "# TYPE executor_http_requests_by_status_total counter",
         ]
         for method in sorted(REQUEST_METRICS["methods"]):
             lines.append(

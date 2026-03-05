@@ -569,9 +569,8 @@ def test_policy_metrics_exposed_for_decisions_errors_and_latency():
     assert "executor_policy_eval_latency_ms_count 3" in prom_body
     assert "executor_policy_eval_latency_ms_avg 20.000" in prom_body
     assert "executor_policy_eval_latency_ms_avg " in prom_body
-    assert "executor_http_requests_total 4" in prom_body
+    assert "executor_http_requests_total 3" in prom_body
     assert "executor_http_request_errors_total 1" in prom_body
-    assert 'executor_http_requests_by_method_total{method="GET"} 1' in prom_body
     assert 'executor_http_requests_by_method_total{method="POST"} 3' in prom_body
-    assert 'executor_http_requests_by_status_total{status="200"} 3' in prom_body
+    assert 'executor_http_requests_by_status_total{status="200"} 2' in prom_body
     assert 'executor_http_requests_by_status_total{status="403"} 1' in prom_body

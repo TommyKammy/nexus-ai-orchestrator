@@ -51,7 +51,16 @@ Alert draft:
 Prometheus scrape configuration is defined in:
 - `k8s/config/deployment/prometheus-monitoring.yaml`
 
-Executor scrape path is configured to `/metrics/prometheus`.
+Executors expose both endpoints:
+- `/metrics` - JSON diagnostics
+- `/metrics/prometheus` - Prometheus exposition format
+
+Current ServiceMonitor usage in this repository:
+- `executor-pools` scrapes `/metrics/prometheus`
+- `executor-load-balancer` scrapes `/metrics`
+- `opa-policy` scrapes `/metrics`
+
+Request metrics intentionally exclude scrape/health endpoints (`/metrics`, `/metrics/prometheus`, `/health`) so traffic/error ratios reflect user/API workload.
 
 ## Basic Verification
 ```bash

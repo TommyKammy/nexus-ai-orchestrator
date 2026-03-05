@@ -12,6 +12,7 @@ This directory contains implementation and verification reports that were previo
 - `security-audit-report.md`
 - `security-audit-report-20260305.md`
 - `dr-drill-20260305.md`
+- `production-readiness-signoff-20260305.md`
 - `k8s-core-stack-smoke-20260305.md`
 - `k8s-smoke-load-suite-20260305.md`
 - `regression-burndown-20260305.md`

@@ -48,6 +48,15 @@ POLICY_METRICS = {
     "latency_ms_sum": 0.0,
     "latency_ms_count": 0,
 }
+REQUEST_METRICS = {
+    "total": 0,
+    "errors": 0,
+    "latency_ms_sum": 0.0,
+    "latency_ms_count": 0,
+    "methods": {},
+    "statuses": {},
+}
+REQUEST_METRIC_EXCLUDE_PATHS = {"/metrics", "/metrics/prometheus", "/health"}
 
 
 def sanitize_error(error: str) -> str:
@@ -144,15 +153,28 @@ class ExecutorHandler(BaseHTTPRequestHandler):
         log_fn(json.dumps(payload, separators=(",", ":"), sort_keys=True))
 
     def _log_access(self, method: str, path: str):
+        status_code = int(getattr(self, "response_status_code", 0))
+        latency_ms = round(self._request_latency_ms(), 3)
+
+        if path not in REQUEST_METRIC_EXCLUDE_PATHS:
+            REQUEST_METRICS["total"] += 1
+            REQUEST_METRICS["latency_ms_sum"] += latency_ms
+            REQUEST_METRICS["latency_ms_count"] += 1
+            REQUEST_METRICS["methods"][method] = REQUEST_METRICS["methods"].get(method, 0) + 1
+            status_key = str(status_code)
+            REQUEST_METRICS["statuses"][status_key] = REQUEST_METRICS["statuses"].get(status_key, 0) + 1
+            if status_code >= 400:
+                REQUEST_METRICS["errors"] += 1
+
         self._log_json(
             "info",
             {
                 "event": "request_complete",
-                "latency_ms": round(self._request_latency_ms(), 3),
+                "latency_ms": latency_ms,
                 "method": method,
                 "path": path,
                 "request_id": getattr(self, "request_id", ""),
-                "status": int(getattr(self, "response_status_code", 0)),
+                "status": status_code,
             },
         )
     
@@ -229,6 +251,8 @@ class ExecutorHandler(BaseHTTPRequestHandler):
         """Build Prometheus exposition text."""
         latency_count = POLICY_METRICS["latency_ms_count"]
         latency_avg = POLICY_METRICS["latency_ms_sum"] / latency_count if latency_count else 0.0
+        request_latency_count = REQUEST_METRICS["latency_ms_count"]
+        request_latency_avg = REQUEST_METRICS["latency_ms_sum"] / request_latency_count if request_latency_count else 0.0
         lines = [
             "# HELP executor_policy_eval_total Total number of policy evaluations",
             "# TYPE executor_policy_eval_total counter",
@@ -250,7 +274,34 @@ class ExecutorHandler(BaseHTTPRequestHandler):
             "# HELP executor_policy_eval_latency_ms_avg Average policy evaluation latency in ms",
             "# TYPE executor_policy_eval_latency_ms_avg gauge",
             f"executor_policy_eval_latency_ms_avg {latency_avg:.3f}",
+            "# HELP executor_http_requests_total Total number of HTTP requests",
+            "# TYPE executor_http_requests_total counter",
+            f'executor_http_requests_total {REQUEST_METRICS["total"]}',
+            "# HELP executor_http_request_errors_total Total number of HTTP error responses (status >= 400)",
+            "# TYPE executor_http_request_errors_total counter",
+            f'executor_http_request_errors_total {REQUEST_METRICS["errors"]}',
+            "# HELP executor_http_request_latency_ms_sum Sum of HTTP request latency in ms",
+            "# TYPE executor_http_request_latency_ms_sum counter",
+            f'executor_http_request_latency_ms_sum {REQUEST_METRICS["latency_ms_sum"]:.3f}',
+            "# HELP executor_http_request_latency_ms_count Number of HTTP request latency samples",
+            "# TYPE executor_http_request_latency_ms_count counter",
+            f"executor_http_request_latency_ms_count {request_latency_count}",
+            "# HELP executor_http_request_latency_ms_avg Average HTTP request latency in ms",
+            "# TYPE executor_http_request_latency_ms_avg gauge",
+            f"executor_http_request_latency_ms_avg {request_latency_avg:.3f}",
+            "# HELP executor_http_requests_by_method_total Total number of HTTP requests grouped by method",
+            "# TYPE executor_http_requests_by_method_total counter",
+            "# HELP executor_http_requests_by_status_total Total number of HTTP requests grouped by response status",
+            "# TYPE executor_http_requests_by_status_total counter",
         ]
+        for method in sorted(REQUEST_METRICS["methods"]):
+            lines.append(
+                f'executor_http_requests_by_method_total{{method="{method}"}} {REQUEST_METRICS["methods"][method]}'
+            )
+        for status in sorted(REQUEST_METRICS["statuses"]):
+            lines.append(
+                f'executor_http_requests_by_status_total{{status="{status}"}} {REQUEST_METRICS["statuses"][status]}'
+            )
         return "\n".join(lines) + "\n"
     
     def _send_error(self, message: str, status: int = 400, log_error: bool = True):
@@ -440,7 +491,8 @@ class ExecutorHandler(BaseHTTPRequestHandler):
             "status": "success",
             "metrics": {
                 **metrics,
-                "policy": POLICY_METRICS
+                "policy": POLICY_METRICS,
+                "requests": REQUEST_METRICS,
             }
         })
 

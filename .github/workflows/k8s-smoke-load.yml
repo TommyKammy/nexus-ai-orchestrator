@@ -54,9 +54,9 @@ jobs:
           kubectl apply -f k8s/config/deployment/
           kubectl -n executor-system set image deployment/executor-operator operator=executor-operator:ci
           kubectl -n executor-system set image deployment/executor-load-balancer load-balancer=executor-load-balancer:ci
-          kubectl -n executor-system patch deployment executor-operator --type=merge \
+          kubectl -n executor-system patch deployment executor-operator --type=strategic \
             -p '{"spec":{"template":{"spec":{"containers":[{"name":"operator","imagePullPolicy":"IfNotPresent"}]}}}}'
-          kubectl -n executor-system patch deployment executor-load-balancer --type=merge \
+          kubectl -n executor-system patch deployment executor-load-balancer --type=strategic \
             -p '{"spec":{"template":{"spec":{"containers":[{"name":"load-balancer","imagePullPolicy":"IfNotPresent"}]}}}}'
           kubectl -n executor-system rollout status deployment/redis --timeout=180s
           kubectl -n executor-system rollout status deployment/executor-operator --timeout=180s

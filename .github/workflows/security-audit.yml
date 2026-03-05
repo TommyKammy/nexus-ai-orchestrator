@@ -1,0 +1,24 @@
+name: Security Audit
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+jobs:
+  security-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run security scans
+        run: bash scripts/ci/security_scan.sh
+
+      - name: Upload security artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-scan-artifacts
+          path: artifacts/security/
+          if-no-files-found: warn

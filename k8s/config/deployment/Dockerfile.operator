@@ -3,7 +3,7 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     python3-dev \
     && rm -rf /var/lib/apt/lists/*
@@ -13,7 +13,7 @@ RUN pip install --no-cache-dir \
     kopf==1.37.1 \
     kubernetes==28.1.0 \
     redis==5.0.1 \
-    aiohttp==3.9.1 \
+    aiohttp==3.13.3 \
     pyyaml==6.0.1
 
 # Copy operator code

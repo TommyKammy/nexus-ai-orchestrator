@@ -20,8 +20,14 @@ Secure AI orchestration infrastructure with n8n workflows, policy evaluation, se
 - `opa` (`openpolicyagent/opa:0.68.0`)
 - `policy-bundle-server` (local image)
 - `caddy` (local image)
+- `executor` (`python:3.11-slim`, isolated task execution runtime)
 
 Primary compose file: `docker-compose.yml`
+
+Additional validated compose variants:
+
+- `docker-compose.executor.yml`: executor-focused stack for running isolated tasks without the full orchestration surface.
+- `docker-compose.n8n-ja.yml`: n8n stack preconfigured for Japanese locale/regionalization.
 
 ## Quick Start (Compose)
 
@@ -128,7 +134,8 @@ K8s CI/load checks:
 - `docs/` design, runbooks, and reports
 - `executor/` executor runtime code
 - `k8s/` manifests/controllers
-- `n8n/workflows-v3/` workflow definitions
+- `n8n/workflows/` legacy workflows (still schema-validated in CI; no new workflows here)
+- `n8n/workflows-v3/` canonical v3 workflow definitions
 - `policy/` OPA policy source/runtime
 - `scripts/` operational and CI helper scripts
 

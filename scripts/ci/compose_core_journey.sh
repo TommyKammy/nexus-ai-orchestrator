@@ -33,6 +33,16 @@ require_cmd() {
 require_cmd docker
 require_cmd jq
 
+prepare_n8n_volume_permissions() {
+  # GitHub runners may check out n8n/ owned by a different uid than the container's node user.
+  # Ensure n8n can write its runtime config/log files on bind-mounted workspace paths.
+  if [[ "${CI:-}" == "true" ]]; then
+    mkdir -p "${ROOT_DIR}/n8n"
+    chmod a+rwx "${ROOT_DIR}/n8n" || true
+    chmod -R a+rwX "${ROOT_DIR}/n8n" || true
+  fi
+}
+
 POSTGRES_PASSWORD_VAL="$POSTGRES_PASSWORD"
 RUN_ID="$(date +%s%N)"
 if [[ -z "$RUN_ID" || "$RUN_ID" == *N ]]; then
@@ -94,6 +104,7 @@ wait_for_ready() {
 }
 
 echo "[1/8] Starting compose stack..."
+prepare_n8n_volume_permissions
 COMPOSE_BAKE=false docker compose up -d --build postgres redis policy-bundle-server opa n8n caddy >/dev/null
 
 if ! wait_for_ready 360; then

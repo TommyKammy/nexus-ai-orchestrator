@@ -63,7 +63,7 @@ jobs:
             RANGE="${PREVIOUS_TAG}..HEAD"
             HEADER="Changes since ${PREVIOUS_TAG}."
           else
-            RANGE="$(git rev-list --max-parents=0 HEAD)..HEAD"
+            RANGE=""
             HEADER="Initial tracked release notes."
           fi
 
@@ -73,7 +73,11 @@ jobs:
             echo "${HEADER}"
             echo
             echo "## Commits"
-            git log --pretty='- %h %s' ${RANGE}
+            if [[ -n "${RANGE}" ]]; then
+              git log --pretty='- %h %s' "${RANGE}"
+            else
+              git log --pretty='- %h %s'
+            fi
           } > RELEASE_NOTES.md
 
           echo "previous_tag=${PREVIOUS_TAG}" >> "${GITHUB_OUTPUT}"

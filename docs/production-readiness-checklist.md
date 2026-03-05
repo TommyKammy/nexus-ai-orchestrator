@@ -1,12 +1,12 @@
 # Production Readiness Checklist
 
-Date: 2026-03-05
-Owner: Platform/Operations
+Date: <YYYY-MM-DD>
+Owner: <team-or-role>
 
 ## 1) Technical Gates
 
-- [ ] CI required checks green (`quality-gates`, `validate/import-test`, `policy-and-executor`, `security-audit`)
-- [ ] Core compose journey passes (`pnpm e2e`)
+- [ ] CI required checks green (`Quality Gates / quality-gates`, `Validate workflows / validate`, `Validate workflows / import-test`, `Policy Tests / policy-and-executor`, `Security Audit / security-audit`)
+- [ ] End-to-end suite passes (`pnpm e2e`, includes import test + compose core journey)
 - [ ] Kubernetes smoke validation completed (`scripts/ci/k8s_smoke_test.sh`)
 - [ ] Release workflow available for SemVer tags (`.github/workflows/release.yml`)
 - [ ] Rollback and DR runbook published (`docs/rollback-dr-runbook.md`)

@@ -8,6 +8,7 @@ Issue: https://github.com/TommyKammy/nexus-ai-orchestrator/issues/44
 - Final decision: **Go**
 - Decision timestamp (UTC): 2026-03-05T10:45:00Z
 - Approver role: Platform owner (recorded via PR sign-off/merge trail)
+- Approver identity: @TommyKammy
 
 ## Dependency Issues
 

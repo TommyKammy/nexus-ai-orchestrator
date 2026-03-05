@@ -1,0 +1,110 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "SemVer tag (e.g. v1.0.0)"
+        required: true
+        default: "v1.0.0"
+      dry_run:
+        description: "Generate notes only (no GitHub Release create)"
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release context
+        id: context
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+            TAG="${GITHUB_REF_NAME}"
+            DRY_RUN="false"
+          else
+            TAG="${{ inputs.release_tag }}"
+            DRY_RUN="${{ inputs.dry_run }}"
+          fi
+
+          if [[ ! "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid tag format: ${TAG}. Expected vMAJOR.MINOR.PATCH" >&2
+            exit 1
+          fi
+
+          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
+          echo "dry_run=${DRY_RUN}" >> "${GITHUB_OUTPUT}"
+
+      - name: Generate release notes
+        id: notes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TAG="${{ steps.context.outputs.tag }}"
+          PREVIOUS_TAG="$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | grep -vx "${TAG}" | head -n1 || true)"
+
+          if [[ -n "${PREVIOUS_TAG}" ]]; then
+            RANGE="${PREVIOUS_TAG}..HEAD"
+            HEADER="Changes since ${PREVIOUS_TAG}."
+          else
+            RANGE="$(git rev-list --max-parents=0 HEAD)..HEAD"
+            HEADER="Initial tracked release notes."
+          fi
+
+          {
+            echo "# ${TAG}"
+            echo
+            echo "${HEADER}"
+            echo
+            echo "## Commits"
+            git log --pretty='- %h %s' ${RANGE}
+          } > RELEASE_NOTES.md
+
+          echo "previous_tag=${PREVIOUS_TAG}" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload release notes artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes-${{ steps.context.outputs.tag }}
+          path: RELEASE_NOTES.md
+          if-no-files-found: error
+
+      - name: Create GitHub release
+        if: ${{ steps.context.outputs.dry_run != 'true' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.context.outputs.tag }}
+          name: ${{ steps.context.outputs.tag }}
+          body_path: RELEASE_NOTES.md
+          draft: false
+          prerelease: false
+
+      - name: Publish summary
+        shell: bash
+        run: |
+          {
+            echo "## Release Workflow Summary"
+            echo "- tag: ${{ steps.context.outputs.tag }}"
+            echo "- dry_run: ${{ steps.context.outputs.dry_run }}"
+            if [[ -n "${{ steps.notes.outputs.previous_tag }}" ]]; then
+              echo "- previous_tag: ${{ steps.notes.outputs.previous_tag }}"
+            else
+              echo "- previous_tag: (none)"
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"

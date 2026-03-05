@@ -12,11 +12,16 @@ if [[ -f "$ROOT_DIR/.env" ]]; then
 fi
 
 POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-}"
+N8N_WEBHOOK_API_KEY="${N8N_WEBHOOK_API_KEY:-ci-local-webhook-key}"
+N8N_ENCRYPTION_KEY="${N8N_ENCRYPTION_KEY:-ci-local-encryption-key-32chars}"
 
 if [[ -z "$POSTGRES_PASSWORD" ]]; then
   echo "POSTGRES_PASSWORD is required (.env or environment)." >&2
   exit 1
 fi
+
+export N8N_WEBHOOK_API_KEY
+export N8N_ENCRYPTION_KEY
 
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -27,6 +32,16 @@ require_cmd() {
 
 require_cmd docker
 require_cmd jq
+
+prepare_n8n_volume_permissions() {
+  # GitHub runners may check out n8n/ owned by a different uid than the container's node user.
+  # Ensure n8n can write its runtime config/log files on bind-mounted workspace paths.
+  if [[ "${CI:-}" == "true" ]]; then
+    mkdir -p "${ROOT_DIR}/n8n"
+    chmod a+rwx "${ROOT_DIR}/n8n" || true
+    chmod -R a+rwX "${ROOT_DIR}/n8n" || true
+  fi
+}
 
 POSTGRES_PASSWORD_VAL="$POSTGRES_PASSWORD"
 RUN_ID="$(date +%s%N)"
@@ -64,8 +79,10 @@ SQL
 
 trap cleanup EXIT
 
+CURL_IMAGE="${CURL_IMAGE:-curlimages/curl:8.10.1}"
+
 curl_internal() {
-  docker exec ai-caddy curl -sS "$@"
+  docker run --rm --network "container:ai-n8n" "${CURL_IMAGE}" "$@"
 }
 
 wait_for_ready() {
@@ -74,7 +91,7 @@ wait_for_ready() {
   start="$(date +%s)"
 
   while true; do
-    if curl_internal -o /dev/null -w '%{http_code}' "http://n8n:5678/healthz/readiness" | grep -q '^200$'; then
+    if curl_internal -sS -o /dev/null -w '%{http_code}' "http://localhost:5678/healthz/readiness" | grep -q '^200$'; then
       return 0
     fi
     now="$(date +%s)"
@@ -87,15 +104,12 @@ wait_for_ready() {
 }
 
 echo "[1/8] Starting compose stack..."
-docker compose up -d postgres redis policy-bundle-server opa n8n caddy >/dev/null
-
-if ! docker exec ai-caddy sh -lc 'command -v curl >/dev/null 2>&1'; then
-  echo "curl is required in ai-caddy container for webhook checks." >&2
-  exit 1
-fi
+prepare_n8n_volume_permissions
+COMPOSE_BAKE=false docker compose up -d --build postgres redis policy-bundle-server opa n8n caddy >/dev/null
 
 if ! wait_for_ready 360; then
   echo "n8n readiness check failed." >&2
+  docker compose logs n8n --tail 200 >&2 || true
   exit 1
 fi
 
@@ -237,6 +251,7 @@ docker compose restart n8n >/dev/null
 
 if ! wait_for_ready 360; then
   echo "n8n readiness check failed after restart." >&2
+  docker compose logs n8n --tail 200 >&2 || true
   exit 1
 fi
 
@@ -269,8 +284,8 @@ post_webhook() {
   local payload="$2"
   local response http_code body
   response="$(
-    curl_internal -w $'\n%{http_code}' -H "Content-Type: application/json" \
-      -X POST "http://n8n:5678/webhook/${path}" \
+    curl_internal -sS -w $'\n%{http_code}' -H "Content-Type: application/json" \
+      -X POST "http://localhost:5678/webhook/${path}" \
       -d "$payload"
   )"
   http_code="${response##*$'\n'}"

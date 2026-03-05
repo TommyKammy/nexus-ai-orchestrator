@@ -12,3 +12,4 @@ This directory contains implementation and verification reports that were previo
 - `security-audit-report.md`
 - `k8s-core-stack-smoke-20260305.md`
 - `k8s-smoke-load-suite-20260305.md`
+- `regression-burndown-20260305.md`

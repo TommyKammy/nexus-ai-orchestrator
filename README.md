@@ -254,7 +254,7 @@ curl http://localhost:8080/metrics/prometheus
 - **0 High** severity issues
 - Comprehensive security documentation in [SECURITY.md](SECURITY.md)
 - Threat model and checklist in [docs/security-threat-model-v1.md](docs/security-threat-model-v1.md)
-- Full audit report in [docs/reports/security-audit-report.md](docs/reports/security-audit-report.md)
+- Full audit report in [docs/reports/security-audit-report-20260305.md](docs/reports/security-audit-report-20260305.md)
 
 ### Key Security Features
 

@@ -12,11 +12,14 @@ if [[ -f "$ROOT_DIR/.env" ]]; then
 fi
 
 POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-}"
+N8N_WEBHOOK_API_KEY="${N8N_WEBHOOK_API_KEY:-ci-local-webhook-key}"
 
 if [[ -z "$POSTGRES_PASSWORD" ]]; then
   echo "POSTGRES_PASSWORD is required (.env or environment)." >&2
   exit 1
 fi
+
+export N8N_WEBHOOK_API_KEY
 
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || {

@@ -1,7 +1,9 @@
 import http.client
 import json
+import logging
 import threading
 from http.server import HTTPServer
+from typing import Optional
 from unittest.mock import Mock, patch
 
 from executor.api_server import ExecutorHandler
@@ -57,13 +59,22 @@ def _start_server():
     return server, thread
 
 
-def _post_json(port: int, path: str, payload: dict):
+def _post_json_raw(port: int, path: str, payload: dict, headers: Optional[dict] = None):
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
-    conn.request("POST", path, body=json.dumps(payload), headers={"Content-Type": "application/json"})
+    request_headers = {"Content-Type": "application/json"}
+    if headers:
+        request_headers.update(headers)
+    conn.request("POST", path, body=json.dumps(payload), headers=request_headers)
     response = conn.getresponse()
     body = response.read().decode("utf-8")
+    response_headers = dict(response.getheaders())
     conn.close()
-    return response.status, json.loads(body)
+    return response.status, json.loads(body), response_headers
+
+
+def _post_json(port: int, path: str, payload: dict):
+    status, parsed, _headers = _post_json_raw(port, path, payload)
+    return status, parsed
 
 
 def _get_json(port: int, path: str):
@@ -120,6 +131,89 @@ def test_execute_returns_structured_output():
     assert "result" in payload
     assert payload["result"]["exit_code"] == 0
     assert payload["result"]["stdout"] == "ok"
+
+
+def test_request_id_is_echoed_in_response_header():
+    with patch("executor.api_server.API_KEY", None), patch(
+        "executor.api_server.template_manager.get_sandbox_kwargs", return_value={}
+    ), patch(
+        "executor.api_server.policy_client.evaluate",
+        return_value={
+            "decision": "allow",
+            "allow": True,
+            "requires_approval": False,
+            "risk_score": 0,
+            "reasons": [],
+        },
+    ), patch("executor.api_server.policy_client.enforce", return_value=True), patch(
+        "executor.api_server.CodeSandbox", _FakeSandbox
+    ):
+        server, thread = _start_server()
+        try:
+            status, payload, headers = _post_json_raw(
+                server.server_port,
+                "/execute",
+                {"tenant_id": "t1", "scope": "analysis", "code": "print('ok')", "language": "python"},
+                {"X-Request-ID": "req-123"},
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    assert status == 200
+    assert payload["request_id"] == "req-123"
+    assert headers["X-Request-ID"] == "req-123"
+
+
+def test_execute_emits_structured_request_log(caplog):
+    with patch("executor.api_server.API_KEY", None), patch(
+        "executor.api_server.template_manager.get_sandbox_kwargs", return_value={}
+    ), patch(
+        "executor.api_server.policy_client.evaluate",
+        return_value={
+            "decision": "allow",
+            "allow": True,
+            "requires_approval": False,
+            "risk_score": 0,
+            "reasons": [],
+        },
+    ), patch("executor.api_server.policy_client.enforce", return_value=True), patch(
+        "executor.api_server.CodeSandbox", _FakeSandbox
+    ):
+        caplog.set_level(logging.INFO, logger="executor.api_server")
+        server, thread = _start_server()
+        try:
+            status, _payload, _headers = _post_json_raw(
+                server.server_port,
+                "/execute",
+                {"tenant_id": "t1", "scope": "analysis", "code": "print('ok')", "language": "python"},
+                {"X-Request-ID": "req-log-1"},
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    assert status == 200
+    parsed_logs = []
+    for record in caplog.records:
+        try:
+            parsed_logs.append(json.loads(record.getMessage()))
+        except json.JSONDecodeError:
+            continue
+
+    access_logs = [entry for entry in parsed_logs if entry.get("event") == "request_complete"]
+    assert access_logs, "expected at least one structured access log entry"
+    matched = [
+        entry
+        for entry in access_logs
+        if entry.get("request_id") == "req-log-1"
+        and entry.get("path") == "/execute"
+        and entry.get("status") == 200
+        and entry.get("latency_ms") is not None
+    ]
+    assert matched, "expected structured request log with request_id/path/status/latency_ms"
 
 
 def test_execute_missing_fields_returns_error():
@@ -377,7 +471,10 @@ def test_policy_metrics_exposed_for_decisions_errors_and_latency():
         "executor.api_server.policy_client.enforce", side_effect=lambda result: bool(result.get("allow"))
     ), patch(
         "executor.api_server.time.monotonic",
-        side_effect=[1.0, 1.01, 2.0, 2.02, 3.0, 3.03],
+        side_effect=[0.0, 1.0, 1.01, 2.0, 2.5, 2.52, 3.0, 3.5, 3.53, 4.0, 5.0],
+    ), patch(
+        "executor.api_server.ExecutorHandler._request_latency_ms",
+        return_value=0.0,
     ), patch("executor.api_server.CodeSandbox", _FakeSandbox):
         server, thread = _start_server()
         try:

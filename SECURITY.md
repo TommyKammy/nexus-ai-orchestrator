@@ -313,15 +313,18 @@ Set policy controls with environment variables:
 
 ```bash
 export OPA_URL="http://opa:8181"
-export POLICY_MODE="enforce"     # shadow or enforce
+export POLICY_MODE="enforce"
 export POLICY_TIMEOUT_MS="800"
-export POLICY_FAIL_MODE="closed" # open or closed
+export POLICY_FAIL_MODE="closed"
+# Development-only override for unsafe advisory/fail-open testing
+# export POLICY_ALLOW_UNSAFE="true"
 ```
 
-- `shadow`: evaluate + log decisions only
+- Default posture: `POLICY_MODE=enforce` and `POLICY_FAIL_MODE=closed`
+- `shadow`: evaluate + log decisions only. Requires `POLICY_ALLOW_UNSAFE=true`.
 - `enforce`: block `deny` and `requires_approval`
 - `closed`: deny requests if OPA is unavailable
-- `open`: allow requests if OPA is unavailable (temporary rollout mode)
+- `open`: allow requests if OPA is unavailable. Requires `POLICY_ALLOW_UNSAFE=true` and should be limited to development-only override cases.
 
 ### 5. Monitor Resource Usage
 

@@ -141,6 +141,10 @@ Callers of `PolicyClient.evaluate()` should consume this normalized shape.
 
 ## Failure/Fallback Semantics
 
+Default executor posture is `POLICY_MODE=enforce` with `POLICY_FAIL_MODE=closed`.
+
+Unsafe advisory or fail-open operation is blocked at startup unless an operator explicitly sets `POLICY_ALLOW_UNSAFE=true` for development-only override scenarios.
+
 When OPA is unavailable, `executor/policy_client.py` returns fallback results in the same normalized shape above (no outer `result` key), based on `POLICY_FAIL_MODE`:
 
 - `open`: `decision=allow`, `allow=true`, `requires_approval=false`

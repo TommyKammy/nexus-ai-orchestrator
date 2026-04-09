@@ -50,9 +50,11 @@ Inner policy result object shape (this is the value under OPA HTTP `result`):
 
 ## Modes
 
-- `POLICY_MODE=shadow`: evaluate and log only
+- Default posture: `POLICY_MODE=enforce` and `POLICY_FAIL_MODE=closed`
+- `POLICY_MODE=shadow`: evaluate and log only. Requires `POLICY_ALLOW_UNSAFE=true`.
 - `POLICY_MODE=enforce`: block `deny` and `requires_approval`
-- `POLICY_FAIL_MODE=open|closed`: behavior on OPA outage
+- `POLICY_FAIL_MODE=closed`: deny requests if OPA is unavailable
+- `POLICY_FAIL_MODE=open`: allow requests if OPA is unavailable. Requires `POLICY_ALLOW_UNSAFE=true`.
 
 ## Local policy tests
 

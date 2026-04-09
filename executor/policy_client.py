@@ -3,10 +3,14 @@ Policy client for OPA-based authorization and risk checks.
 """
 
 import json
+import logging
 import os
 import urllib.error
 import urllib.request
 from typing import Any, Dict
+
+
+logger = logging.getLogger(__name__)
 
 
 class PolicyClient:
@@ -14,10 +18,53 @@ class PolicyClient:
 
     def __init__(self):
         self.opa_url = os.environ.get("OPA_URL", "http://opa:8181").rstrip("/")
-        self.mode = os.environ.get("POLICY_MODE", "shadow").lower()
-        self.fail_mode = os.environ.get("POLICY_FAIL_MODE", "open").lower()
+        self.mode = os.environ.get("POLICY_MODE", "enforce").lower()
+        self.fail_mode = os.environ.get("POLICY_FAIL_MODE", "closed").lower()
         self.timeout_ms = int(os.environ.get("POLICY_TIMEOUT_MS", "800"))
+        self.allow_unsafe = os.environ.get("POLICY_ALLOW_UNSAFE", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
         self.endpoint = f"{self.opa_url}/v1/data/ai/policy/result"
+        self._validate_configuration()
+
+    def _validate_configuration(self) -> None:
+        valid_modes = {"shadow", "enforce"}
+        if self.mode not in valid_modes:
+            raise ValueError(
+                f"Invalid POLICY_MODE={self.mode!r}; expected one of {sorted(valid_modes)}"
+            )
+
+        valid_fail_modes = {"open", "closed"}
+        if self.fail_mode not in valid_fail_modes:
+            raise ValueError(
+                f"Invalid POLICY_FAIL_MODE={self.fail_mode!r}; expected one of {sorted(valid_fail_modes)}"
+            )
+
+        unsafe_reasons = []
+        if self.mode != "enforce":
+            unsafe_reasons.append(f"POLICY_MODE={self.mode}")
+        if self.fail_mode != "closed":
+            unsafe_reasons.append(f"POLICY_FAIL_MODE={self.fail_mode}")
+
+        if not unsafe_reasons:
+            return
+
+        if not self.allow_unsafe:
+            joined_reasons = ", ".join(unsafe_reasons)
+            raise ValueError(
+                "Unsafe policy configuration requires explicit operator intent: "
+                f"{joined_reasons}. Set POLICY_ALLOW_UNSAFE=true only for development overrides."
+            )
+
+        logger.warning(
+            "Unsafe policy override enabled: mode=%s fail_mode=%s allow_unsafe=%s",
+            self.mode,
+            self.fail_mode,
+            self.allow_unsafe,
+        )
 
     def evaluate(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Evaluate a policy input and normalize response fields."""

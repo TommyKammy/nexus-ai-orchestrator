@@ -6,6 +6,7 @@ from executor.policy_client import PolicyClient
 def test_policy_client_defaults_to_enforce_and_fail_closed(monkeypatch):
     monkeypatch.delenv("POLICY_MODE", raising=False)
     monkeypatch.delenv("POLICY_FAIL_MODE", raising=False)
+    monkeypatch.delenv("POLICY_ALLOW_UNSAFE", raising=False)
 
     client = PolicyClient()
 
@@ -14,7 +15,9 @@ def test_policy_client_defaults_to_enforce_and_fail_closed(monkeypatch):
 
 
 def test_policy_client_fallback_denies_when_opa_unavailable(monkeypatch):
+    monkeypatch.delenv("POLICY_MODE", raising=False)
     monkeypatch.delenv("POLICY_FAIL_MODE", raising=False)
+    monkeypatch.delenv("POLICY_ALLOW_UNSAFE", raising=False)
 
     client = PolicyClient()
     result = client._fallback_result("opa unavailable")

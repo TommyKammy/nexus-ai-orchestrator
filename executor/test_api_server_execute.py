@@ -1,8 +1,12 @@
 import http.client
 import json
 import logging
+import os
+import subprocess
+import sys
 import threading
 from http.server import HTTPServer
+from pathlib import Path
 from typing import Optional
 from unittest.mock import Mock, patch
 
@@ -153,6 +157,33 @@ def test_start_server_requires_executor_api_key():
             start_server(host="127.0.0.1", port=0)
 
     http_server.assert_not_called()
+
+
+def test_start_server_rejects_invalid_max_request_body_bytes():
+    with patch("executor.api_server.API_KEY", "secret-key"), patch(
+        "executor.api_server.MAX_REQUEST_BODY_BYTES", "not-an-int"
+    ), patch("executor.api_server.HTTPServer") as http_server:
+        with pytest.raises(RuntimeError, match="EXECUTOR_MAX_REQUEST_BODY_BYTES must be an integer"):
+            start_server(host="127.0.0.1", port=0)
+
+    http_server.assert_not_called()
+
+
+def test_import_api_server_does_not_crash_on_invalid_max_request_body_env():
+    env = os.environ.copy()
+    env["EXECUTOR_MAX_REQUEST_BODY_BYTES"] = "not-an-int"
+    repo_root = Path(__file__).resolve().parents[1]
+    result = subprocess.run(
+        [sys.executable, "-c", "import executor.api_server; print('imported')"],
+        capture_output=True,
+        cwd=repo_root,
+        env=env,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "imported"
 
 
 def test_execute_requires_api_key_header_when_configured():

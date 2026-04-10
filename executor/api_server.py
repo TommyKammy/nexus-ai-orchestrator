@@ -30,7 +30,8 @@ logger = logging.getLogger(__name__)
 # Security configuration
 API_KEY = os.environ.get('EXECUTOR_API_KEY')
 PRODUCTION_MODE = os.environ.get('EXECUTOR_PRODUCTION', 'false').lower() == 'true'
-MAX_REQUEST_BODY_BYTES = int(os.environ.get('EXECUTOR_MAX_REQUEST_BODY_BYTES', 1024 * 1024))
+DEFAULT_MAX_REQUEST_BODY_BYTES = 1024 * 1024
+MAX_REQUEST_BODY_BYTES = DEFAULT_MAX_REQUEST_BODY_BYTES
 ALLOWED_ORIGINS = tuple(
     origin.strip()
     for origin in os.environ.get("EXECUTOR_ALLOWED_ORIGINS", "").split(",")
@@ -74,8 +75,16 @@ class RequestValidationError(ValueError):
 
 def require_runtime_configuration():
     """Refuse startup without explicit executor authentication."""
+    global MAX_REQUEST_BODY_BYTES
+
     if not API_KEY or not str(API_KEY).strip():
         raise RuntimeError("EXECUTOR_API_KEY must be set before starting the executor API")
+
+    raw_max_body = os.environ.get("EXECUTOR_MAX_REQUEST_BODY_BYTES", str(MAX_REQUEST_BODY_BYTES))
+    try:
+        MAX_REQUEST_BODY_BYTES = int(raw_max_body)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("EXECUTOR_MAX_REQUEST_BODY_BYTES must be an integer greater than 0") from exc
 
     if MAX_REQUEST_BODY_BYTES <= 0:
         raise RuntimeError("EXECUTOR_MAX_REQUEST_BODY_BYTES must be greater than 0")

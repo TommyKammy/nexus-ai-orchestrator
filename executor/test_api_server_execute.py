@@ -6,7 +6,10 @@ from http.server import HTTPServer
 from typing import Optional
 from unittest.mock import Mock, patch
 
+import pytest
+
 from executor.api_server import ExecutorHandler
+from executor.api_server import start_server
 
 
 class _FakeSandbox:
@@ -144,6 +147,96 @@ def test_execute_returns_structured_output():
     assert payload["result"]["stdout"] == "ok"
 
 
+def test_start_server_requires_executor_api_key():
+    with patch("executor.api_server.API_KEY", None), patch("executor.api_server.HTTPServer") as http_server:
+        with pytest.raises(RuntimeError, match="EXECUTOR_API_KEY"):
+            start_server(host="127.0.0.1", port=0)
+
+    http_server.assert_not_called()
+
+
+def test_execute_requires_api_key_header_when_configured():
+    with patch("executor.api_server.API_KEY", "secret-key"):
+        server, thread = _start_server()
+        try:
+            status, payload = _post_json(
+                server.server_port,
+                "/execute",
+                {"tenant_id": "t1", "scope": "analysis", "code": "print('ok')", "language": "python"},
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    assert status == 401
+    assert payload["status"] == "error"
+    assert payload["error"] == "Unauthorized"
+
+
+def test_execute_succeeds_with_api_key_header_when_configured():
+    with patch("executor.api_server.API_KEY", "secret-key"), patch(
+        "executor.api_server.template_manager.get_sandbox_kwargs", return_value={}
+    ), patch(
+        "executor.api_server.policy_client.evaluate",
+        return_value={
+            "decision": "allow",
+            "allow": True,
+            "requires_approval": False,
+            "risk_score": 0,
+            "reasons": [],
+        },
+    ), patch("executor.api_server.policy_client.enforce", return_value=True), patch(
+        "executor.api_server.CodeSandbox", _FakeSandbox
+    ):
+        server, thread = _start_server()
+        try:
+            status, payload, _headers = _post_json_raw(
+                server.server_port,
+                "/execute",
+                {"tenant_id": "t1", "scope": "analysis", "code": "print('ok')", "language": "python"},
+                {"X-API-Key": "secret-key"},
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    assert status == 200
+    assert payload["status"] == "success"
+    assert payload["tenant_id"] == "t1"
+    assert payload["scope"] == "analysis"
+    assert payload["result"]["stdout"] == "ok"
+
+
+def test_execute_rejects_oversized_body_before_sandbox_run():
+    oversized_code = "x" * 128
+    with patch("executor.api_server.API_KEY", "secret-key"), patch(
+        "executor.api_server.MAX_REQUEST_BODY_BYTES", 64, create=True
+    ), patch("executor.api_server.policy_client.evaluate") as evaluate_mock, patch(
+        "executor.api_server.policy_client.enforce"
+    ) as enforce_mock, patch("executor.api_server.CodeSandbox") as sandbox_cls:
+        server, thread = _start_server()
+        try:
+            status, payload, _headers = _post_json_raw(
+                server.server_port,
+                "/execute",
+                {"tenant_id": "t1", "scope": "analysis", "code": oversized_code, "language": "python"},
+                {"X-API-Key": "secret-key"},
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    assert status == 413
+    assert payload["status"] == "error"
+    assert "too large" in payload["error"].lower()
+    evaluate_mock.assert_not_called()
+    enforce_mock.assert_not_called()
+    sandbox_cls.assert_not_called()
+
+
 def test_request_id_is_echoed_in_response_header():
     with patch("executor.api_server.API_KEY", None), patch(
         "executor.api_server.template_manager.get_sandbox_kwargs", return_value={}
@@ -228,10 +321,16 @@ def test_execute_emits_structured_request_log(caplog):
 
 
 def test_options_echoes_request_id_header():
-    with patch("executor.api_server.API_KEY", None):
+    with patch("executor.api_server.API_KEY", "secret-key"), patch(
+        "executor.api_server.ALLOWED_ORIGINS", ("https://console.example.com",), create=True
+    ):
         server, thread = _start_server()
         try:
-            status, headers = _options(server.server_port, "/execute", {"X-Request-ID": "opt-req-1"})
+            status, headers = _options(
+                server.server_port,
+                "/execute",
+                {"Origin": "https://console.example.com", "X-Request-ID": "opt-req-1"},
+            )
         finally:
             server.shutdown()
             server.server_close()
@@ -239,6 +338,7 @@ def test_options_echoes_request_id_header():
 
     assert status == 200
     assert headers["X-Request-ID"] == "opt-req-1"
+    assert headers["Access-Control-Allow-Origin"] == "https://console.example.com"
     assert headers["Access-Control-Allow-Headers"] == "Content-Type, X-API-Key, X-Request-ID"
 
 

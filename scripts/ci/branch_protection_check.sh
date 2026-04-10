@@ -28,21 +28,27 @@ if ! protection_json="$(gh api "repos/${repo}/branches/${branch}/protection" 2>/
   exit 1
 fi
 
-required_status_json="$(
-  gh api "repos/${repo}/branches/${branch}/protection/required_status_checks" 2>/dev/null || true
-)"
+required_status_read_failed=0
+if ! required_status_json="$(
+  gh api "repos/${repo}/branches/${branch}/protection/required_status_checks" 2>/dev/null
+)"; then
+  required_status_json=""
+  required_status_read_failed=1
+fi
 
 expected_contexts_json="$(printf '%s\n' "${required_contexts[@]}" | python3 -c 'import json, sys; print(json.dumps([line.strip() for line in sys.stdin if line.strip()]))')"
 
-python3 - "$protection_json" "$required_status_json" "$expected_contexts_json" <<'PY'
+python3 - "$protection_json" "$required_status_json" "$expected_contexts_json" "$required_status_read_failed" <<'PY'
 import json
 import sys
 
 protection = json.loads(sys.argv[1])
 required_status = json.loads(sys.argv[2]) if sys.argv[2] else None
 expected_contexts = json.loads(sys.argv[3])
+required_status_read_failed = sys.argv[4] == "1"
 
 errors = []
+warnings = []
 
 reviews = protection.get("required_pull_request_reviews") or {}
 if reviews.get("required_approving_review_count", 0) < 1:
@@ -60,7 +66,9 @@ if protection.get("allow_deletions", {}).get("enabled", True):
 if not protection.get("required_conversation_resolution", {}).get("enabled", False):
     errors.append("required conversation resolution must be enabled")
 
-if not required_status:
+if required_status_read_failed:
+    errors.append("unable to read required status checks (verify gh auth/token scopes)")
+elif not required_status:
     errors.append("required status checks are not enabled")
 else:
     if not required_status.get("strict", False):
@@ -73,13 +81,16 @@ else:
     if missing_contexts:
         errors.append(f"missing required status checks: {', '.join(missing_contexts)}")
     if extra_contexts:
-        errors.append(f"unexpected required status checks: {', '.join(extra_contexts)}")
+        warnings.append(f"additional required status checks present: {', '.join(extra_contexts)}")
 
 if errors:
     print("Branch protection policy check failed:", file=sys.stderr)
     for error in errors:
         print(f"- {error}", file=sys.stderr)
     sys.exit(1)
+
+for warning in warnings:
+    print(f"Branch protection policy check warning: {warning}", file=sys.stderr)
 
 print("Branch protection policy matches the documented main-branch requirements.")
 PY

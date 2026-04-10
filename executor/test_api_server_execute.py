@@ -160,8 +160,8 @@ def test_start_server_requires_executor_api_key():
 
 
 def test_start_server_rejects_invalid_max_request_body_bytes():
-    with patch("executor.api_server.API_KEY", "secret-key"), patch(
-        "executor.api_server.MAX_REQUEST_BODY_BYTES", "not-an-int"
+    with patch("executor.api_server.API_KEY", "secret-key"), patch.dict(
+        os.environ, {"EXECUTOR_MAX_REQUEST_BODY_BYTES": "not-an-int"}, clear=False
     ), patch("executor.api_server.HTTPServer") as http_server:
         with pytest.raises(RuntimeError, match="EXECUTOR_MAX_REQUEST_BODY_BYTES must be an integer"):
             start_server(host="127.0.0.1", port=0)

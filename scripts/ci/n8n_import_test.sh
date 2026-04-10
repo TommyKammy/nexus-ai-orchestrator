@@ -443,6 +443,35 @@ LIMIT 3;
     die "router webhook authenticated response did not return status=NO_BRAIN"
   fi
 
+  echo "      Calling webhook with bearer auth: ${WEBHOOK_URL}"
+  HTTP_STATUS="$(curl -sS -o /tmp/webhook_body.txt -w '%{http_code}' \
+    -X POST \
+    -H 'Content-Type: application/json' \
+    -H "Authorization: Bearer ${N8N_WEBHOOK_API_KEY}" \
+    -d "${PAYLOAD}" "${WEBHOOK_URL}" \
+    2>/tmp/webhook_err.txt || true)"
+  BODY="$(cat /tmp/webhook_body.txt 2>/dev/null || true)"
+  ERR="$(cat /tmp/webhook_err.txt 2>/dev/null || true)"
+
+  echo "      HTTP Status (bearer auth): ${HTTP_STATUS}"
+  echo "      Body (bearer auth): ${BODY}"
+  if [[ -n "${ERR}" ]]; then
+    echo "      Curl stderr (bearer auth): ${ERR}"
+  fi
+
+  if [[ "${HTTP_STATUS}" != "200" ]]; then
+    echo ""
+    echo "ERROR: Webhook endpoint rejected bearer auth"
+    echo ""
+    echo "[debug] n8n logs (tail 400):"
+    docker logs --tail 400 "${N8N_CONTAINER}" 2>&1 | tee -a "$WORKLOG"
+    die "router webhook bearer-authenticated call failed, expected 200 got ${HTTP_STATUS}"
+  fi
+
+  if ! echo "${BODY}" | grep -q '"status"[[:space:]]*:[[:space:]]*"NO_BRAIN"'; then
+    die "router webhook bearer-authenticated response did not return status=NO_BRAIN"
+  fi
+
   echo ""
   echo "=========================================="
   echo "✓ ALL CHECKS PASSED"

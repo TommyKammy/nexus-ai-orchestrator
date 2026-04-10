@@ -230,12 +230,12 @@ All tenant-facing, executor-facing, policy-facing, and chat-facing n8n webhooks 
 - Runtime requirement: keep `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` for the n8n service, because the shared webhook auth `Code` nodes read `N8N_WEBHOOK_API_KEY` via `$env`
 - Security tradeoff: `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` exposes container environment variables to editable n8n `Code` nodes, so workflow edit access must stay tightly restricted until the auth gate moves off `$env`
 - Exit condition for this exception: move the shared webhook auth gate off `$env.N8N_WEBHOOK_API_KEY` to a scoped credential or deployment-injected secret, then restore `N8N_BLOCK_ENV_ACCESS_IN_NODE=true`
-- Accepted request headers at the edge: `X-API-Key: <key>`
+- Accepted request headers at the edge: `X-API-Key: <key>` or `Authorization: Bearer <key>`
 - Accepted request headers inside the workflow auth node: `X-API-Key: <key>` or `Authorization: Bearer <key>`
 - Failure behavior: reject before side effects with `401 Unauthorized`
 - Slack slash-command ingress is the only webhook path that keeps its separate Slack signature flow
 
-This is intentional defense in depth. Caddy remains the first gate for `/webhook/*` and currently enforces `X-API-Key`, while the workflow JSON must also reject missing or invalid credentials so direct n8n access or partial routing drift does not bypass auth.
+This is intentional defense in depth. Caddy remains the first gate for `/webhook/*` and now accepts the shared key through either `X-API-Key` or `Authorization: Bearer`, while the workflow JSON must also reject missing or invalid credentials so direct n8n access or partial routing drift does not bypass auth.
 
 Operator check:
 

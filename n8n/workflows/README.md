@@ -10,7 +10,7 @@ All non-Slack n8n webhook entry points are expected to enforce the same auth con
 - Accepted request headers: `X-API-Key: <key>` or `Authorization: Bearer <key>`
 - Failure behavior: invalid or missing credentials return `401 Unauthorized`
 
-Examples in this document use `X-API-Key` so they stay aligned with the default Caddy policy.
+Examples in this document use `X-API-Key`, but the edge and workflow auth gates also accept `Authorization: Bearer <key>` for the same shared secret.
 
 ## Workflows
 

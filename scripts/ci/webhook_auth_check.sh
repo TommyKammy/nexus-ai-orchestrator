@@ -76,7 +76,8 @@ check_workflow_auth() {
 }
 
 require_pattern "path /webhook/*" "$CADDYFILE"
-require_pattern "not header X-API-Key {env.N8N_WEBHOOK_API_KEY}" "$CADDYFILE"
+require_pattern "header({'X-API-Key': {env.N8N_WEBHOOK_API_KEY}})" "$CADDYFILE"
+require_pattern "header({'Authorization': 'Bearer ' + {env.N8N_WEBHOOK_API_KEY}})" "$CADDYFILE"
 require_pattern "respond @unauthorized 401" "$CADDYFILE"
 require_pattern "Unauthorized: Invalid or missing API key" "$CADDYFILE"
 

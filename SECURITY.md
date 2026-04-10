@@ -183,9 +183,11 @@ services:
 
 ## API Authentication
 
-### Optional API Key Authentication
+### Required API Key Authentication
 
-Enable API key authentication by setting the environment variable:
+The executor API requires `EXECUTOR_API_KEY` at startup. The service refuses to start if the key is missing or blank.
+
+Configure it before starting the API:
 
 ```bash
 export EXECUTOR_API_KEY="your-secure-api-key-here"
@@ -205,6 +207,19 @@ curl -X POST http://localhost:8080/execute \
     "scope": "test",
     "code": "print(\"Hello World\")"
   }'
+```
+
+### Origin and Request Validation
+
+- CORS is explicit-only. Set `EXECUTOR_ALLOWED_ORIGINS` to a comma-separated list of trusted browser origins when browser clients need access.
+- Executor POST endpoints accept only `application/json` request bodies whose top-level value is a JSON object.
+- Request bodies larger than `EXECUTOR_MAX_REQUEST_BODY_BYTES` are rejected with `413` before policy or sandbox side effects occur.
+
+Example:
+
+```bash
+export EXECUTOR_ALLOWED_ORIGINS="https://console.example.com,https://ops.example.com"
+export EXECUTOR_MAX_REQUEST_BODY_BYTES=1048576
 ```
 
 ### Production Mode

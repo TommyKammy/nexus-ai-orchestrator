@@ -32,6 +32,13 @@ The AI Orchestrator Executor provides **E2B-style** secure sandbox execution for
 ### 1. Start the Executor Service
 
 ```bash
+# Required: executor API auth
+export EXECUTOR_API_KEY="change-me"
+
+# Optional: explicit browser origins and request-body cap
+export EXECUTOR_ALLOWED_ORIGINS="https://console.example.com"
+export EXECUTOR_MAX_REQUEST_BODY_BYTES=1048576
+
 # Start with Docker-in-Docker executor
 docker compose -f docker-compose.yml -f docker-compose.executor.yml up -d executor
 
@@ -45,6 +52,7 @@ curl http://localhost:8080/health
 # Direct execution
 curl -X POST http://localhost:8080/execute \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: change-me" \
   -d '{
     "tenant_id": "t1",
     "scope": "user:123",
@@ -52,6 +60,11 @@ curl -X POST http://localhost:8080/execute \
     "template": "default"
   }'
 ```
+
+Notes:
+- `EXECUTOR_API_KEY` is required at startup. The API refuses to boot without it.
+- Browser access requires explicit `EXECUTOR_ALLOWED_ORIGINS`; the server no longer sends wildcard CORS headers.
+- Executor POST endpoints only accept JSON-object request bodies and reject oversized bodies with `413`.
 
 ### 3. Python SDK Example
 
@@ -151,6 +164,12 @@ Execute code in a new sandbox.
   ]
 }
 ```
+
+**Request requirements:**
+- Include `X-API-Key` on executor requests.
+- Send `Content-Type: application/json`.
+- Request body must be a JSON object.
+- Body size is capped by `EXECUTOR_MAX_REQUEST_BODY_BYTES` and returns `413` when exceeded.
 
 #### POST /session/create
 Create a persistent session.

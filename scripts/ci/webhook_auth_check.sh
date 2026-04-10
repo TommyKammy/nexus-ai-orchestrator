@@ -22,6 +22,38 @@ reject_pattern() {
   fi
 }
 
+check_workflow_auth() {
+  local workflow_path="$1"
+  local webhook_paths
+  local workflow_strings
+
+  webhook_paths="$(
+    jq -r '.nodes[]? | select(.type == "n8n-nodes-base.webhook") | .parameters.path // empty' "$workflow_path"
+  )"
+
+  [[ -n "$webhook_paths" ]] || return 0
+
+  while IFS= read -r webhook_path; do
+    [[ -n "$webhook_path" ]] || continue
+
+    if [[ "$webhook_path" == "slack-command" ]]; then
+      continue
+    fi
+
+    workflow_strings="$(jq -r '.. | strings' "$workflow_path")"
+
+    if ! grep -Eiq 'x-api-key|authorization' <<<"$workflow_strings"; then
+      echo "Workflow ${workflow_path} exposes /webhook/${webhook_path} without any in-workflow auth contract." >&2
+      exit 1
+    fi
+
+    if ! grep -Eiq 'unauthorized|401' <<<"$workflow_strings"; then
+      echo "Workflow ${workflow_path} exposes /webhook/${webhook_path} without an explicit unauthenticated rejection path." >&2
+      exit 1
+    fi
+  done <<<"$webhook_paths"
+}
+
 require_pattern "path /webhook/*" "$CADDYFILE"
 require_pattern "not header X-API-Key {env.N8N_WEBHOOK_API_KEY}" "$CADDYFILE"
 require_pattern "respond @unauthorized 401" "$CADDYFILE"
@@ -50,5 +82,9 @@ if ! grep -Fq 'N8N_WEBHOOK_API_KEY: ${N8N_WEBHOOK_API_KEY:?set N8N_WEBHOOK_API_K
   echo "Caddy service must include N8N_WEBHOOK_API_KEY env wiring in ${COMPOSE_FILE}" >&2
   exit 1
 fi
+
+while IFS= read -r workflow_path; do
+  check_workflow_auth "$workflow_path"
+done < <(find n8n/workflows n8n/workflows-v3 -type f -name '*.json' | sort)
 
 echo "Webhook auth configuration checks passed."

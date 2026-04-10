@@ -173,7 +173,7 @@ curl -X POST 'https://n8n-s-app01.tmcast.net/webhook/memory/search' \
 curl -X POST 'https://n8n-s-app01.tmcast.net/webhook/audit/append' \
   -H 'Content-Type: application/json' \
   -H 'X-API-Key: YOUR_WEBHOOK_KEY' \
-  -d '{"actor":"test:user","action":"test_action","target":"user:123","decision":"allowed","payload":{"test":true}}'
+  -d '{"actor":"test:user","action":"test_action","target":"user:123","decision":"allowed","payload":{"request_id":"req-123","policy_id":"executor-core-v1","policy_version":"2026-02-20","test":true}}'
 ```
 **Result:** ✓ Audit event stored with payload_jsonb
 

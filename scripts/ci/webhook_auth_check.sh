@@ -59,6 +59,11 @@ check_workflow_auth() {
           .name == "Unauthorized Response"
           and .type == "n8n-nodes-base.respondToWebhook"
           and (((.parameters.options.responseCode // .parameters.responseCode // "") | tostring) == "401")
+          and (
+            ((.parameters.options.body // .parameters.body // .parameters.options.responseBody // .parameters.responseBody // "") | tostring) as $response_body
+            | (($response_body | contains("status: '\''error'\''")) or ($response_body | contains("\"status\":\"error\"")))
+            and ($response_body | contains("message"))
+          )
         )
         and (($connections[$webhook_nodes[0].name].main[0][0].node // "") == "Check Webhook Auth")
         and (($connections["Check Webhook Auth"].main[0][0].node // "") == "Webhook Authorized?")

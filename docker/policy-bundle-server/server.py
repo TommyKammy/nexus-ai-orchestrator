@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import io
 import json
+import logging
 import mimetypes
 import os
 import tarfile
@@ -18,6 +19,10 @@ N8N_INTERNAL_BASE_URL = os.environ.get("N8N_INTERNAL_BASE_URL", "http://n8n:5678
 UI_ROOT = os.path.join(os.path.dirname(__file__), "ui")
 HOST = os.environ.get("BUNDLE_SERVER_HOST", "0.0.0.0")
 PORT = int(os.environ.get("BUNDLE_SERVER_PORT", "8088"))
+PUBLISH_API_KEY = os.environ.get("POLICY_BUNDLE_PUBLISH_API_KEY", "").strip()
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("policy_bundle_server")
 
 
 def _read_text(path, fallback=""):
@@ -126,6 +131,67 @@ def build_bundle_bytes():
 
 
 class Handler(BaseHTTPRequestHandler):
+    def _log_json(self, level, payload):
+        log_fn = getattr(logger, level, logger.info)
+        log_fn(json.dumps(payload, sort_keys=True))
+
+    def _publish_log_context(self, status, payload=None, **extra):
+        actor = ""
+        revision_id = ""
+        workflow_count = None
+        if isinstance(payload, dict):
+            actor = str(payload.get("actor", "")).strip()
+            revision_id = str(payload.get("revision_id", "")).strip()
+            workflows = payload.get("workflows")
+            if isinstance(workflows, list):
+                workflow_count = len(workflows)
+
+        event = {
+            "event": "policy_publish",
+            "method": getattr(self, "command", ""),
+            "path": getattr(self, "path", ""),
+            "source_ip": self.client_address[0] if getattr(self, "client_address", None) else "",
+            "status": status,
+        }
+        if actor:
+            event["actor"] = actor
+        if revision_id:
+            event["revision_id"] = revision_id
+        if workflow_count is not None:
+            event["workflow_count"] = workflow_count
+        event.update(extra)
+        return event
+
+    def _require_publish_auth(self, payload=None):
+        if not PUBLISH_API_KEY:
+            self._log_json(
+                "error",
+                self._publish_log_context(
+                    503,
+                    payload,
+                    outcome="rejected",
+                    reason="publish_auth_not_configured",
+                ),
+            )
+            self._send_json(503, {"ok": False, "error": "Publish authentication not configured"})
+            return False
+
+        auth_header = self.headers.get("X-API-Key", "").strip()
+        if auth_header == PUBLISH_API_KEY:
+            return True
+
+        self._log_json(
+            "warning",
+            self._publish_log_context(
+                401,
+                payload,
+                outcome="rejected",
+                reason="invalid_api_key",
+            ),
+        )
+        self._send_json(401, {"ok": False, "error": "Unauthorized"})
+        return False
+
     def _send_json(self, status, payload):
         body = json.dumps(payload, ensure_ascii=True).encode("utf-8")
         self.send_response(status)
@@ -145,6 +211,9 @@ class Handler(BaseHTTPRequestHandler):
         payload, err = _read_body_json(self)
         if err:
             self._send_json(400, {"ok": False, "error": err})
+            return
+
+        if not self._require_publish_auth(payload):
             return
 
         workflows = payload.get("workflows")
@@ -167,6 +236,15 @@ class Handler(BaseHTTPRequestHandler):
             f.write("\n")
         os.replace(tmp_path, RUNTIME_REGISTRY_PATH)
 
+        self._log_json(
+            "info",
+            self._publish_log_context(
+                200,
+                runtime_payload,
+                outcome="applied",
+                notes=str(runtime_payload.get("notes", "")),
+            ),
+        )
         self._send_json(200, {"ok": True, "revision_id": runtime_payload["revision_id"], "count": len(workflows)})
 
     def _serve_ui_asset(self, path):
@@ -231,7 +309,20 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/policy-ui/api/publish":
+            if not self._require_publish_auth(payload):
+                return
             status, response = _proxy_n8n_json("POST", "/webhook/policy/registry/publish", body=payload)
+            log_level = "info" if 200 <= status < 400 else "warning"
+            self._log_json(
+                log_level,
+                self._publish_log_context(
+                    status,
+                    payload,
+                    outcome="proxied" if 200 <= status < 400 else "rejected",
+                    upstream="n8n",
+                    upstream_response_ok=bool(response.get("ok")) if isinstance(response, dict) else False,
+                ),
+            )
             self._send_json(status, response)
             return
 

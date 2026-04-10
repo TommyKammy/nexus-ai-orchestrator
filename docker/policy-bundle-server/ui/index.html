@@ -99,6 +99,7 @@
         <form id="publishForm" class="form-grid">
           <label>revision_id<input name="revision_id" placeholder="rev-YYYYMMDD-01" required /></label>
           <label>actor<input name="actor" value="policy-ui" required /></label>
+          <label class="span-2">publish_api_key<input id="publishApiKey" name="publish_api_key" type="password" autocomplete="current-password" placeholder="POLICY_BUNDLE_PUBLISH_API_KEY" required /></label>
           <label class="span-2">notes<textarea name="notes" rows="3">publish from policy ui</textarea></label>
           <button class="btn btn-warn" type="submit">Publish</button>
         </form>

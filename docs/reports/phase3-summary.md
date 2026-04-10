@@ -153,7 +153,7 @@ ai-redis      Up 12 hours        6379/tcp
 
 **Usage:**
 ```bash
-sudo /home/tommy/.dev/ai-orchestrator/deploy-phase3.sh
+sudo ./deploy-phase3.sh
 ```
 
 ---
@@ -230,7 +230,7 @@ b495f14 - feat: Phase 2 hardening - response fixes, PCA, monitoring
 ### Quick Deploy
 ```bash
 # 1. Run deployment script
-sudo /home/tommy/.dev/ai-orchestrator/deploy-phase3.sh
+sudo ./deploy-phase3.sh
 
 # 2. Verify cron jobs
 crontab -l
@@ -242,9 +242,10 @@ sudo tail /var/log/pgvector_monitor.log
 ### Manual Steps (if needed)
 ```bash
 # Copy files to runtime
-sudo cp /home/tommy/.dev/ai-orchestrator/deploy-phase3.sh /opt/ai-orchestrator/
-sudo cp /home/tommy/.dev/ai-orchestrator/docker-compose.yml /opt/ai-orchestrator/
-sudo cp -r /home/tommy/.dev/ai-orchestrator/tools /opt/ai-orchestrator/
+sudo cp ./deploy-phase3.sh /opt/ai-orchestrator/
+sudo cp ./docker-compose.yml /opt/ai-orchestrator/
+sudo mkdir -p /opt/ai-orchestrator/tools
+sudo cp -r ./tools/. /opt/ai-orchestrator/tools/
 
 # Generate PCA model
 cd /opt/ai-orchestrator/tools

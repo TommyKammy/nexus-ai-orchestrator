@@ -12,8 +12,7 @@ import time
 import uuid
 from typing import Dict, Any, Optional
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import parse_qs, urlparse
-import threading
+from urllib.parse import urlparse
 
 # Import our sandbox modules
 from executor.sandbox import CodeSandbox
@@ -31,6 +30,13 @@ logger = logging.getLogger(__name__)
 # Security configuration
 API_KEY = os.environ.get('EXECUTOR_API_KEY')
 PRODUCTION_MODE = os.environ.get('EXECUTOR_PRODUCTION', 'false').lower() == 'true'
+DEFAULT_MAX_REQUEST_BODY_BYTES = 1024 * 1024
+MAX_REQUEST_BODY_BYTES = DEFAULT_MAX_REQUEST_BODY_BYTES
+ALLOWED_ORIGINS = tuple(
+    origin.strip()
+    for origin in os.environ.get("EXECUTOR_ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+)
 
 # Global session manager
 session_manager = SessionManager(
@@ -57,6 +63,31 @@ REQUEST_METRICS = {
     "statuses": {},
 }
 REQUEST_METRIC_EXCLUDE_PATHS = {"/metrics", "/metrics/prometheus", "/health"}
+
+
+class RequestValidationError(ValueError):
+    """Raised when an incoming request fails validation."""
+
+    def __init__(self, message: str, status: int = 400):
+        super().__init__(message)
+        self.status = status
+
+
+def require_runtime_configuration():
+    """Refuse startup without explicit executor authentication."""
+    global MAX_REQUEST_BODY_BYTES
+
+    if not API_KEY or not str(API_KEY).strip():
+        raise RuntimeError("EXECUTOR_API_KEY must be set before starting the executor API")
+
+    raw_max_body = os.environ.get("EXECUTOR_MAX_REQUEST_BODY_BYTES", str(MAX_REQUEST_BODY_BYTES))
+    try:
+        MAX_REQUEST_BODY_BYTES = int(raw_max_body)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("EXECUTOR_MAX_REQUEST_BODY_BYTES must be an integer greater than 0") from exc
+
+    if MAX_REQUEST_BODY_BYTES <= 0:
+        raise RuntimeError("EXECUTOR_MAX_REQUEST_BODY_BYTES must be greater than 0")
 
 
 def sanitize_error(error: str) -> str:
@@ -217,15 +248,30 @@ class ExecutorHandler(BaseHTTPRequestHandler):
         self.send_header('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'")
         self.send_header('Referrer-Policy', 'strict-origin-when-cross-origin')
         self.send_header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
-    
+
+    def _get_cors_origin(self) -> Optional[str]:
+        origin = self.headers.get("Origin", "").strip()
+        if not origin:
+            return None
+        if origin in ALLOWED_ORIGINS:
+            return origin
+        return None
+
+    def _send_cors_headers(self):
+        origin = self._get_cors_origin()
+        if not origin:
+            return
+        self.send_header("Access-Control-Allow-Origin", origin)
+        self.send_header("Vary", "Origin")
+
     def _send_json_response(self, data: Dict[str, Any], status: int = 200):
         """Send JSON response."""
         self.send_response(status)
         self.send_header('Content-Type', 'application/json')
-        self.send_header('Access-Control-Allow-Origin', '*')
         request_id = getattr(self, "request_id", None)
         if request_id:
             self.send_header("X-Request-ID", request_id)
+        self._send_cors_headers()
         self._send_security_headers()
         body = json.dumps(data).encode('utf-8')
         self.send_header("Content-Length", str(len(body)))
@@ -240,6 +286,7 @@ class ExecutorHandler(BaseHTTPRequestHandler):
         request_id = getattr(self, "request_id", None)
         if request_id:
             self.send_header("X-Request-ID", request_id)
+        self._send_cors_headers()
         self._send_security_headers()
         body = text.encode("utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -326,15 +373,85 @@ class ExecutorHandler(BaseHTTPRequestHandler):
     
     def _read_body(self) -> Dict[str, Any]:
         """Read and parse request body."""
-        content_length = int(self.headers.get('Content-Length', 0))
+        content_length_header = self.headers.get('Content-Length', '0')
+        try:
+            content_length = int(content_length_header)
+        except ValueError as exc:
+            raise RequestValidationError("Invalid Content-Length header") from exc
+        if content_length < 0:
+            raise RequestValidationError("Invalid Content-Length header")
+        if content_length > MAX_REQUEST_BODY_BYTES:
+            raise RequestValidationError("Request body too large", status=413)
         if content_length == 0:
             return {}
-        
-        body = self.rfile.read(content_length).decode('utf-8')
+
+        content_type = self.headers.get("Content-Type", "")
+        if not content_type.lower().startswith("application/json"):
+            raise RequestValidationError("Content-Type must be application/json", status=415)
+
+        raw_body = self.rfile.read(content_length)
+        if len(raw_body) > MAX_REQUEST_BODY_BYTES:
+            raise RequestValidationError("Request body too large", status=413)
+
         try:
-            return json.loads(body)
-        except json.JSONDecodeError:
+            body = json.loads(raw_body.decode('utf-8'))
+        except UnicodeDecodeError as exc:
+            raise RequestValidationError("Request body must be valid UTF-8") from exc
+        except json.JSONDecodeError as exc:
+            raise RequestValidationError("Request body must be valid JSON") from exc
+
+        if not isinstance(body, dict):
+            raise RequestValidationError("Request body must be a JSON object")
+
+        return body
+
+    def _require_string_field(self, body: Dict[str, Any], field: str) -> str:
+        value = body.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise RequestValidationError(f"Field '{field}' must be a non-empty string")
+        return value
+
+    def _require_fields_present(self, body: Dict[str, Any], *fields: str):
+        missing = [field for field in fields if body.get(field) is None]
+        if missing:
+            raise RequestValidationError(f"Missing required fields: {', '.join(missing)}")
+
+    def _optional_string_field(self, body: Dict[str, Any], field: str, default: str) -> str:
+        value = body.get(field, default)
+        if not isinstance(value, str) or not value.strip():
+            raise RequestValidationError(f"Field '{field}' must be a non-empty string")
+        return value
+
+    def _optional_dict_field(self, body: Dict[str, Any], field: str) -> Dict[str, Any]:
+        value = body.get(field, {})
+        if value is None:
             return {}
+        if not isinstance(value, dict):
+            raise RequestValidationError(f"Field '{field}' must be an object")
+        return value
+
+    def _optional_string_map_field(self, body: Dict[str, Any], field: str) -> Dict[str, str]:
+        value = self._optional_dict_field(body, field)
+        normalized: Dict[str, str] = {}
+        for key, item in value.items():
+            if not isinstance(key, str) or not key.strip():
+                raise RequestValidationError(
+                    f"Field '{field}' must be a map of non-empty string paths to non-empty string contents"
+                )
+            if not isinstance(item, str) or not item.strip():
+                raise RequestValidationError(
+                    f"Field '{field}' must be a map of non-empty string paths to non-empty string contents"
+                )
+            normalized[key] = item
+        return normalized
+
+    def _optional_int_field(self, body: Dict[str, Any], field: str, default: int) -> int:
+        value = body.get(field, default)
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise RequestValidationError(f"Field '{field}' must be an integer")
+        if value <= 0:
+            raise RequestValidationError(f"Field '{field}' must be greater than 0")
+        return value
     
     def do_OPTIONS(self):
         """Handle CORS preflight requests."""
@@ -345,10 +462,17 @@ class ExecutorHandler(BaseHTTPRequestHandler):
         self._request_started = time.monotonic()
         self.response_status_code = 0
 
+        origin = self._get_cors_origin()
+        if not origin:
+            self._send_error("Origin not allowed", 403)
+            self._log_access("OPTIONS", path)
+            return
+
         self.send_response(200)
-        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Origin', origin)
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type, X-API-Key, X-Request-ID')
+        self.send_header('Vary', 'Origin')
         self.send_header("X-Request-ID", self.request_id)
         self._send_security_headers()
         self.end_headers()
@@ -400,6 +524,8 @@ class ExecutorHandler(BaseHTTPRequestHandler):
                 return
             body = self._read_body()
             self._dispatch_post(path, body)
+        except RequestValidationError as e:
+            self._send_error(str(e), e.status)
         except Exception as e:
             self._log_json(
                 "error",
@@ -559,19 +685,14 @@ class ExecutorHandler(BaseHTTPRequestHandler):
     
     def _handle_execute(self, body: Dict[str, Any]):
         """Handle direct code execution."""
-        tenant_id = body.get('tenant_id')
-        scope = body.get('scope')
-        code = body.get('code')
-        language = body.get('language', 'python')
-        template = body.get('template', 'default')
-        task_type = body.get('task_type', 'code_execution')
-        files = body.get('files', {})
-        
-        if not all([tenant_id, scope, code]):
-            self._send_error("Missing required fields: tenant_id, scope, code")
-            return
-        
-        code = str(code)  # Ensure code is string
+        self._require_fields_present(body, 'tenant_id', 'scope', 'code')
+        tenant_id = self._require_string_field(body, 'tenant_id')
+        scope = self._require_string_field(body, 'scope')
+        code = self._require_string_field(body, 'code')
+        language = self._optional_string_field(body, 'language', 'python')
+        template = self._optional_string_field(body, 'template', 'default')
+        task_type = self._optional_string_field(body, 'task_type', 'code_execution')
+        files = self._optional_string_map_field(body, 'files')
         
         # Get template configuration
         template_kwargs = template_manager.get_sandbox_kwargs(template)
@@ -632,14 +753,11 @@ class ExecutorHandler(BaseHTTPRequestHandler):
     
     def _handle_create_session(self, body: Dict[str, Any]):
         """Handle session creation."""
-        tenant_id = body.get('tenant_id')
-        scope = body.get('scope')
-        template = body.get('template', 'default')
-        ttl = body.get('ttl', 300)
-        
-        if not all([tenant_id, scope]):
-            self._send_error("Missing required fields: tenant_id, scope")
-            return
+        self._require_fields_present(body, 'tenant_id', 'scope')
+        tenant_id = self._require_string_field(body, 'tenant_id')
+        scope = self._require_string_field(body, 'scope')
+        template = self._optional_string_field(body, 'template', 'default')
+        ttl = self._optional_int_field(body, 'ttl', 300)
         
         try:
             # Get template configuration
@@ -691,11 +809,8 @@ class ExecutorHandler(BaseHTTPRequestHandler):
     
     def _handle_destroy_session(self, body: Dict[str, Any]):
         """Handle session destruction."""
-        session_id = body.get('session_id')
-        
-        if not session_id:
-            self._send_error("Missing required field: session_id")
-            return
+        self._require_fields_present(body, 'session_id')
+        session_id = self._require_string_field(body, 'session_id')
         
         success = session_manager.destroy_session(session_id)
         
@@ -717,14 +832,11 @@ class ExecutorHandler(BaseHTTPRequestHandler):
     
     def _handle_session_execute(self, body: Dict[str, Any]):
         """Handle execution in existing session."""
-        session_id = body.get('session_id')
-        code = body.get('code')
-        language = body.get('language', 'python')
-        files = body.get('files', {})
-        
-        if not all([session_id, code]):
-            self._send_error("Missing required fields: session_id, code")
-            return
+        self._require_fields_present(body, 'session_id', 'code')
+        session_id = self._require_string_field(body, 'session_id')
+        code = self._require_string_field(body, 'code')
+        language = self._optional_string_field(body, 'language', 'python')
+        files = self._optional_string_map_field(body, 'files')
 
         session = session_manager.get_session(session_id)
         scope = ""
@@ -774,6 +886,7 @@ def start_server(host: str = '0.0.0.0', port: int = 8080):
         host: Host to bind to
         port: Port to listen on
     """
+    require_runtime_configuration()
     server = HTTPServer((host, port), ExecutorHandler)
     logger.info(f"Executor API server started on {host}:{port}")
     

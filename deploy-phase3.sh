@@ -12,7 +12,8 @@ echo ""
 
 # Configuration
 RUNTIME_DIR="/opt/ai-orchestrator"
-SOURCE_DIR="/home/tommy/.dev/ai-orchestrator"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SOURCE_DIR="${SOURCE_DIR:-$SCRIPT_DIR}"
 
 # Colors
 RED='\033[0;31m'

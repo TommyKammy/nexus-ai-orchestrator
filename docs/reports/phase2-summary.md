@@ -132,7 +132,7 @@ docker exec ai-postgres psql -U ai_user -d ai_memory -f monitor_pgvector.sql
 
 ### New Files
 ```
-/home/tommy/.dev/ai-orchestrator/
+<repo-root>/
 ├── tools/
 │   ├── pca_reduce.py              [NEW] PCA reduction tool
 │   ├── requirements.txt           [NEW] Python dependencies
@@ -178,16 +178,16 @@ Files: 7 files changed, 1149 insertions(+), 6 deletions(-)
 
 ### 1. Copy Updated Workflows
 ```bash
-sudo cp /home/tommy/.dev/ai-orchestrator/n8n/workflows/01_memory_ingest.json \
+sudo cp ./n8n/workflows/01_memory_ingest.json \
         /opt/ai-orchestrator/n8n/workflows-v3/
-sudo cp /home/tommy/.dev/ai-orchestrator/n8n/workflows/02_vector_search.json \
+sudo cp ./n8n/workflows/02_vector_search.json \
         /opt/ai-orchestrator/n8n/workflows-v3/
 ```
 
 ### 2. Copy Tools
 ```bash
 sudo mkdir -p /opt/ai-orchestrator/tools
-sudo cp /home/tommy/.dev/ai-orchestrator/tools/* \
+sudo cp ./tools/* \
         /opt/ai-orchestrator/tools/
 ```
 
@@ -272,7 +272,7 @@ docker exec ai-postgres psql -U ai_user -d ai_memory \
 
 ## Repository Status
 
-**Location:** `/home/tommy/.dev/ai-orchestrator`  
+**Location:** `<repo-root>`  
 **GitHub:** https://github.com/TommyKammy/ai-orchestrator  
 **Commits:** 2 (Phase 1 + Phase 2)
 
@@ -289,4 +289,3 @@ docker exec ai-postgres psql -U ai_user -d ai_memory \
 Production Hardening Phase 2 is complete. All workflows return proper production JSON, PCA reduction is ready for deployment, query performance is tuned, and comprehensive monitoring is in place.
 
 **System Status:** Production Ready ✅
-

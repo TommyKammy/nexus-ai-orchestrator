@@ -7,7 +7,13 @@ echo "Credentials need to be recreated in n8n UI."
 echo "URL: https://n8n-s-app01.tmcast.net/credentials"
 echo ""
 
-cd /opt/ai-orchestrator 2>/dev/null || cd /home/tommy/.dev/ai-orchestrator
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+cd /opt/ai-orchestrator 2>/dev/null || cd "$REPO_DIR" || {
+    echo "Error: unable to locate repository directory" >&2
+    exit 1
+}
 
 echo "=== Required Credentials ==="
 echo ""

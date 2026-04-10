@@ -236,7 +236,7 @@ const secretPatterns = [
 
 ### GitHub Repository
 ```
-/home/tommy/.dev/ai-orchestrator/
+<repo-root>/
 ├── Caddyfile                              [MODIFIED] - Added rate limiting
 ├── deploy-updates.sh                      [NEW] - Deployment automation
 ├── n8n/workflows/
@@ -263,15 +263,15 @@ Message: feat: add embedding cache, pgvector tuning, operational guards
 ### Step 1: Copy Files to Runtime
 ```bash
 # Run deployment script
-sudo /home/tommy/.dev/ai-orchestrator/deploy-updates.sh
+sudo ./deploy-updates.sh
 ```
 
 Or manually:
 ```bash
-sudo cp /home/tommy/.dev/ai-orchestrator/Caddyfile /opt/ai-orchestrator/Caddyfile
+sudo cp ./Caddyfile /opt/ai-orchestrator/Caddyfile
 sudo mkdir -p /opt/ai-orchestrator/n8n/workflows-v3
-sudo cp /home/tommy/.dev/ai-orchestrator/n8n/workflows/01_memory_ingest_v3_cached.json /opt/ai-orchestrator/n8n/workflows-v3/
-sudo cp /home/tommy/.dev/ai-orchestrator/n8n/workflows/02_vector_search.json /opt/ai-orchestrator/n8n/workflows-v3/
+sudo cp ./n8n/workflows/01_memory_ingest_v3_cached.json /opt/ai-orchestrator/n8n/workflows-v3/
+sudo cp ./n8n/workflows/02_vector_search.json /opt/ai-orchestrator/n8n/workflows-v3/
 ```
 
 ### Step 2: Reload Caddy
@@ -323,7 +323,7 @@ curl -X POST 'https://n8n-s-app01.tmcast.net/webhook/memory/search-v3' \
 | Embedding cache functional | ✅ | content_hash column, unique index, cached workflow |
 | pgvector index exists | ✅ | idx_memory_vectors_embedding (ivfflat, lists=50) |
 | Query plan verification | ✅ | Documented in work log |
-| Work logs created | ✅ | 4 work logs under /home/tommy/.dev/worklog/ai-orchestrator |
+| Work logs created | ✅ | 4 work logs under `./worklog/` |
 | No secrets in repo | ✅ | API keys only in runtime environment |
 | Rate limiting | ✅ | Caddy config: 30 req/min per IP |
 | Retry logic | ✅ | 3 retries with 1s delay on Gemini nodes |
@@ -391,7 +391,7 @@ curl -X POST 'https://n8n-s-app01.tmcast.net/webhook/memory/search-v3' \
 ## Contact & Support
 
 - **Repository:** https://github.com/TommyKammy/ai-orchestrator
-- **Work Logs:** `/home/tommy/.dev/worklog/ai-orchestrator/`
+- **Work Logs:** `./worklog/`
 - **Runtime:** `/opt/ai-orchestrator/`
 - **n8n URL:** https://n8n-s-app01.tmcast.net
 

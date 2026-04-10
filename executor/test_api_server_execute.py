@@ -173,14 +173,18 @@ def test_import_api_server_does_not_crash_on_invalid_max_request_body_env():
     env = os.environ.copy()
     env["EXECUTOR_MAX_REQUEST_BODY_BYTES"] = "not-an-int"
     repo_root = Path(__file__).resolve().parents[1]
-    result = subprocess.run(
-        [sys.executable, "-c", "import executor.api_server; print('imported')"],
-        capture_output=True,
-        cwd=repo_root,
-        env=env,
-        text=True,
-        check=False,
-    )
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", "import executor.api_server; print('imported')"],
+            capture_output=True,
+            cwd=repo_root,
+            env=env,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+    except subprocess.TimeoutExpired as exc:
+        pytest.fail(f"Import probe timed out after {exc.timeout} seconds")
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "imported"

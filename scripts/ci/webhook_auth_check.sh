@@ -25,7 +25,6 @@ reject_pattern() {
 check_workflow_auth() {
   local workflow_path="$1"
   local webhook_paths
-  local workflow_strings
 
   webhook_paths="$(
     jq -r '.nodes[]? | select(.type == "n8n-nodes-base.webhook") | .parameters.path // empty' "$workflow_path"
@@ -40,15 +39,32 @@ check_workflow_auth() {
       continue
     fi
 
-    workflow_strings="$(jq -r '.. | strings' "$workflow_path")"
-
-    if ! grep -Eiq 'x-api-key|authorization' <<<"$workflow_strings"; then
-      echo "Workflow ${workflow_path} exposes /webhook/${webhook_path} without any in-workflow auth contract." >&2
-      exit 1
-    fi
-
-    if ! grep -Eiq 'unauthorized|401' <<<"$workflow_strings"; then
-      echo "Workflow ${workflow_path} exposes /webhook/${webhook_path} without an explicit unauthenticated rejection path." >&2
+    if ! jq -e --arg webhook_path "$webhook_path" '
+      (.nodes // []) as $nodes
+      | (.connections // {}) as $connections
+      | [ $nodes[]? | select(.type == "n8n-nodes-base.webhook" and (.parameters.path // "") == $webhook_path) ] as $webhook_nodes
+      | ($webhook_nodes | length) == 1
+        and any($nodes[]?;
+          .name == "Check Webhook Auth"
+          and .type == "n8n-nodes-base.code"
+          and ((.parameters.jsCode // "") | test("N8N_WEBHOOK_API_KEY"))
+          and ((.parameters.jsCode // "") | test("webhook_auth"))
+        )
+        and any($nodes[]?;
+          .name == "Webhook Authorized?"
+          and .type == "n8n-nodes-base.if"
+          and ((.parameters.conditions | tostring) | contains("webhook_auth.authenticated === true"))
+        )
+        and any($nodes[]?;
+          .name == "Unauthorized Response"
+          and .type == "n8n-nodes-base.respondToWebhook"
+          and (((.parameters.options.responseCode // .parameters.responseCode // "") | tostring) == "401")
+        )
+        and (($connections[$webhook_nodes[0].name].main[0][0].node // "") == "Check Webhook Auth")
+        and (($connections["Check Webhook Auth"].main[0][0].node // "") == "Webhook Authorized?")
+        and (($connections["Webhook Authorized?"].main[1][0].node // "") == "Unauthorized Response")
+    ' "$workflow_path" >/dev/null; then
+      echo "Workflow ${workflow_path} exposes /webhook/${webhook_path} without the required auth gate wiring." >&2
       exit 1
     fi
   done <<<"$webhook_paths"

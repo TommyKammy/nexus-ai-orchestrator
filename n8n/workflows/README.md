@@ -164,7 +164,7 @@ curl -X POST 'https://n8n-s-app01.tmcast.net/webhook/memory/ingest' \
 curl -X POST 'https://n8n-s-app01.tmcast.net/webhook/memory/search' \
   -H 'Content-Type: application/json' \
   -H 'X-API-Key: YOUR_WEBHOOK_KEY' \
-  -d '{"scope":"user:123","query":"PDF","k":5}'
+  -d '{"tenant_id":"t1","scope":"user:123","query":"PDF","k":5}'
 ```
 **Result:** ✓ Query executed and audit event logged
 

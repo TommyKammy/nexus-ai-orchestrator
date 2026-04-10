@@ -9,6 +9,7 @@ const taskTypeOptions = $("#taskTypeOptions");
 const workflowOptions = $("#workflowOptions");
 const taskTypeFromWorkflow = $("#taskTypeFromWorkflow");
 const taskTypeFromPolicy = $("#taskTypeFromPolicy");
+const publishApiKeyInput = $("#publishApiKey");
 
 let allRules = [];
 
@@ -130,11 +131,12 @@ async function apiGet(path) {
   return json;
 }
 
-async function apiPost(path, payload) {
+async function apiPost(path, payload, options = {}) {
+  const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
   const res = await fetch(path, {
     method: "POST",
     credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(payload),
   });
   const json = await res.json().catch(() => ({ error: "invalid json response" }));
@@ -237,6 +239,12 @@ taskTypeFromPolicy?.addEventListener("change", () => {
 $("#publishForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const f = e.currentTarget;
+  const publishApiKey = (publishApiKeyInput?.value || "").trim();
+  if (!publishApiKey) {
+    setResult({ ok: false, action: "publish", error: { error: "publish_api_key is required" } });
+    publishApiKeyInput?.focus();
+    return;
+  }
 
   const payload = {
     revision_id: f.revision_id.value.trim(),
@@ -262,7 +270,10 @@ $("#publishForm").addEventListener("submit", async (e) => {
 
     if (!confirm(msg)) return;
 
-    const result = await apiPost("/policy-ui/api/publish", payload);
+    sessionStorage.setItem("policyUiPublishApiKey", publishApiKey);
+    const result = await apiPost("/policy-ui/api/publish", payload, {
+      headers: { "X-API-Key": publishApiKey },
+    });
 
     // Reflection check (OPA polling interval is up to 30 seconds)
     let reflected = false;
@@ -317,6 +328,9 @@ $("#refreshAll").addEventListener("click", async () => {
 
 (async () => {
   try {
+    if (publishApiKeyInput) {
+      publishApiKeyInput.value = sessionStorage.getItem("policyUiPublishApiKey") || "";
+    }
     await Promise.all([loadRules(), loadRuntime(), loadCandidates()]);
     const form = $("#upsertForm");
     setAdvancedVisibility(form);

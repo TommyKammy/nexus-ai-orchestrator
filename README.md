@@ -58,6 +58,7 @@ At minimum configure these in `.env`:
 - `N8N_WEBHOOK_API_KEY`
 - `SLACK_INTERNAL_AUTH`
 - `N8N_HOST`
+- `POLICY_BUNDLE_PUBLISH_API_KEY`
 
 Reference: `.env.example`
 

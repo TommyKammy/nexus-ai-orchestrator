@@ -13,6 +13,7 @@ This runbook covers operational steps for policy registry workflows:
 - `policy_workflows`, `policy_revisions`, `policy_publish_logs` tables exist
 - `policy-bundle-server` and `opa` services are healthy
 - Caddy webhook API key is available (`X-API-Key`)
+- Policy bundle publish API key is configured on `policy-bundle-server` (`POLICY_BUNDLE_PUBLISH_API_KEY`)
 - Baseline policy includes `security_digest_mail` in `policy/opa/data.json`
 
 ## Standard Flow
@@ -58,6 +59,31 @@ Note:
 - Publish calls use retry/timeout protection (30s timeout, retries enabled).
 - OPA reflection remains asynchronous; validate after 10-30 seconds.
 
+### 2a) Runtime bundle publish authentication
+Direct runtime registry updates now require the policy bundle publish key in `X-API-Key`.
+
+Example:
+```bash
+curl -sS -X POST http://127.0.0.1:8088/registry/publish \
+  -H 'Content-Type: application/json' \
+  -H "X-API-Key: ${POLICY_BUNDLE_PUBLISH_API_KEY}" \
+  -d '{
+    "revision_id": "rev-20260222-01",
+    "actor": "ops",
+    "notes": "publish by operations",
+    "workflows": [{"workflow_id": "daily_it_security_digest_mailer_executor_v1", "task_type": "security_digest_mail"}]
+  }'
+```
+
+Expected response:
+- `ok: true`
+- `revision_id` matches request
+- `count` matches published workflow count
+
+Audit log expectations:
+- successful and rejected publish attempts emit structured `policy_publish` log entries from `policy-bundle-server`
+- log entries include at least request path, status, actor when supplied, and workflow count when available
+
 ### 3) Verify runtime registry
 Check bundle-server current registry:
 - `GET /registry/current`
@@ -87,4 +113,4 @@ Query policy decision endpoint and confirm expected decision.
   - `POST /policy-ui/api/publish`
   - `GET /policy-ui/api/current`
 - Candidate dropdowns (`task_type`, optional `workflow_id`) are sourced from `10_policy_registry_candidates`.
-- Browser does not need direct webhook API key handling for these operations.
+- Publish from the UI now requires the operator to supply `POLICY_BUNDLE_PUBLISH_API_KEY`; the browser sends it as `X-API-Key` only for `POST /policy-ui/api/publish`.

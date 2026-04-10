@@ -18,6 +18,12 @@ jobs:
       - name: Validate Slack workflows
         run: python3 scripts/validate_slack_workflows.py n8n/workflows-v3
 
+      - name: Check Slack ingress security regression
+        run: python3 -m unittest -v tests.test_slack_ingress_security
+
+      - name: Check Slack request verifier
+        run: python3 -m unittest -v tests.test_slack_request_verifier
+
   import-test:
     runs-on: ubuntu-latest
     needs: validate

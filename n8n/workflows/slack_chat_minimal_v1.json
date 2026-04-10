@@ -81,6 +81,10 @@
             {
               "name": "Content-Type",
               "value": "application/json"
+            },
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.N8N_WEBHOOK_API_KEY }}"
             }
           ]
         },

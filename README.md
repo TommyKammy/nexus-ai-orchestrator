@@ -19,6 +19,7 @@ Secure AI orchestration infrastructure with n8n workflows, policy evaluation, se
 - `n8n` (`n8nio/n8n:2.8.3`)
 - `opa` (`openpolicyagent/opa:0.68.0`)
 - `policy-bundle-server` (local image)
+- `slack-request-verifier` (local image)
 - `caddy` (local image)
 - `executor` (`python:3.11-slim`, isolated task execution runtime)
 
@@ -56,7 +57,7 @@ At minimum configure these in `.env`:
 - `N8N_ENCRYPTION_KEY`
 - `N8N_BASIC_AUTH_PASSWORD`
 - `N8N_WEBHOOK_API_KEY`
-- `SLACK_INTERNAL_AUTH`
+- `SLACK_SIGNING_SECRET`
 - `N8N_HOST`
 - `POLICY_BUNDLE_PUBLISH_API_KEY`
 

@@ -233,9 +233,9 @@ All tenant-facing, executor-facing, policy-facing, and chat-facing n8n webhooks 
 - Accepted request headers at the edge: `X-API-Key: <key>` or `Authorization: Bearer <key>`
 - Accepted request headers inside the workflow auth node: `X-API-Key: <key>` or `Authorization: Bearer <key>`
 - Failure behavior: reject before side effects with `401 Unauthorized`
-- Slack slash-command ingress is the only webhook path that keeps its separate Slack signature flow
+- Slack slash-command ingress keeps its separate Slack signature flow through the internal `slack-request-verifier` service, using `SLACK_SIGNING_SECRET` plus a five-minute replay window
 
-This is intentional defense in depth. Caddy remains the first gate for `/webhook/*` and now accepts the shared key through either `X-API-Key` or `Authorization: Bearer`, while the workflow JSON must also reject missing or invalid credentials so direct n8n access or partial routing drift does not bypass auth.
+This is intentional defense in depth. Caddy remains the first gate for `/webhook/*` with shared rate limiting, and still accepts the shared key through either `X-API-Key` or `Authorization: Bearer` for non-Slack webhooks. The `/webhook/slack-command` path is proxied through the internal `slack-request-verifier` service before n8n sees the request, so forged or replayed Slack-style requests fail with `401 Unauthorized` before any downstream workflow step runs while valid signed requests continue to the normal Slack workflow.
 
 Operator check:
 

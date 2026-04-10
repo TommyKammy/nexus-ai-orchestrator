@@ -16,26 +16,11 @@ n8n-s-app01.tmcast.net {
 
     # Legacy Slack slash command paths - rewrite to n8n webhook
     @slack_legacy path /slack/command /slack-command
-    handle @slack_legacy {
-        rewrite * /webhook/slack-command
-        reverse_proxy n8n:5678 {
-            header_up -X-Internal-Auth
-            header_up X-Internal-Auth {env.SLACK_INTERNAL_AUTH}
-        }
-    }
-
-    # Handle Slack slash commands - bypass API key check
-    handle /webhook/slack-command {
-        reverse_proxy n8n:5678 {
-            header_up -X-Internal-Auth
-            header_up X-Internal-Auth {env.SLACK_INTERNAL_AUTH}
-        }
-    }
+    rewrite @slack_legacy /webhook/slack-command
 
     # Rate limit all webhook traffic at the edge (30 req/min per source IP)
     @webhook_rate_limited {
         path /webhook/*
-        not path /webhook/slack-command /webhook/slack-command/*
         rate_limit {
             zone webhook_limit {
                 key {remote_host}
@@ -49,7 +34,14 @@ n8n-s-app01.tmcast.net {
         body "Too Many Requests"
     }
 
-    # Block unauthorized webhook requests (shared key protection for all other webhooks)
+    @slack_command path /webhook/slack-command /webhook/slack-command/*
+    handle @slack_command {
+        reverse_proxy slack-request-verifier:8089
+    }
+
+    # Block unauthorized webhook requests.
+    # Slack slash-command requests are verified by the internal slack-request-verifier
+    # service, so they are exempt from the shared API key matcher here.
     @unauthorized `
         path('/webhook/*')
         && !path('/webhook/slack-command', '/webhook/slack-command/*')

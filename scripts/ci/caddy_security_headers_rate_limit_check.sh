@@ -20,7 +20,6 @@ require_pattern 'Referrer-Policy[[:space:]]+"strict-origin-when-cross-origin"' "
 
 require_pattern '@webhook_rate_limited' "$CADDYFILE"
 require_pattern 'path[[:space:]]+/webhook/\*' "$CADDYFILE"
-require_pattern 'not[[:space:]]+path[[:space:]]+/webhook/slack-command[[:space:]]+/webhook/slack-command/\*' "$CADDYFILE"
 require_pattern 'rate_limit' "$CADDYFILE"
 require_pattern 'zone[[:space:]]+webhook_limit' "$CADDYFILE"
 require_pattern 'key[[:space:]]+\{remote_host\}' "$CADDYFILE"
@@ -28,6 +27,10 @@ require_pattern 'events[[:space:]]+30' "$CADDYFILE"
 require_pattern 'window[[:space:]]+1m' "$CADDYFILE"
 require_pattern 'respond[[:space:]]+@webhook_rate_limited[[:space:]]+429' "$CADDYFILE"
 require_pattern 'respond[[:space:]]+@unauthorized[[:space:]]+401' "$CADDYFILE"
+if grep -Eq 'not[[:space:]]+path[[:space:]]+/webhook/slack-command[[:space:]]+/webhook/slack-command/\*' "$CADDYFILE"; then
+  echo "Slack webhook path must not bypass the shared Caddy rate limit." >&2
+  exit 1
+fi
 
 rate_limit_respond_line="$(grep -En 'respond[[:space:]]+@webhook_rate_limited[[:space:]]+429' "$CADDYFILE" | head -n1 | cut -d: -f1)"
 unauthorized_respond_line="$(grep -En 'respond[[:space:]]+@unauthorized[[:space:]]+401' "$CADDYFILE" | head -n1 | cut -d: -f1)"

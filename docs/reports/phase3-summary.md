@@ -244,7 +244,8 @@ sudo tail /var/log/pgvector_monitor.log
 # Copy files to runtime
 sudo cp ./deploy-phase3.sh /opt/ai-orchestrator/
 sudo cp ./docker-compose.yml /opt/ai-orchestrator/
-sudo cp -r ./tools /opt/ai-orchestrator/
+sudo mkdir -p /opt/ai-orchestrator/tools
+sudo cp -r ./tools/. /opt/ai-orchestrator/tools/
 
 # Generate PCA model
 cd /opt/ai-orchestrator/tools

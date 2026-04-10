@@ -10,7 +10,10 @@ echo ""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-cd /opt/ai-orchestrator 2>/dev/null || cd "$REPO_DIR"
+cd /opt/ai-orchestrator 2>/dev/null || cd "$REPO_DIR" || {
+    echo "Error: unable to locate repository directory" >&2
+    exit 1
+}
 
 echo "=== Required Credentials ==="
 echo ""

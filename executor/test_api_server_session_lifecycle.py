@@ -171,6 +171,42 @@ def test_session_create_policy_denied_returns_403_without_creating_session():
         manager.stop()
 
 
+def test_session_execute_rejects_invalid_files_map_before_side_effects():
+    manager = SessionManager(default_ttl=300, max_sessions=5, enable_cleanup_thread=False)
+    try:
+        with patch("executor.api_server.API_KEY", None), patch(
+            "executor.api_server.session_manager", manager
+        ), patch(
+            "executor.api_server.policy_client.evaluate"
+        ) as evaluate_mock, patch("executor.api_server.policy_client.enforce") as enforce_mock, patch(
+            "executor.api_server.session_manager.execute_in_session"
+        ) as execute_mock:
+            server, thread = _start_server()
+            try:
+                status, payload = _post_json(
+                    server.server_port,
+                    "/session/execute",
+                    {
+                        "session_id": "abc123def456",
+                        "code": "print('ok')",
+                        "files": {"a.txt": {"nested": 1}},
+                    },
+                )
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+
+        assert status == 400
+        assert payload["status"] == "error"
+        assert "files" in payload["error"]
+        evaluate_mock.assert_not_called()
+        enforce_mock.assert_not_called()
+        execute_mock.assert_not_called()
+    finally:
+        manager.stop()
+
+
 def test_session_manager_persists_ttl_state_with_store():
     state_store = _FakeStateStore()
     manager = SessionManager(

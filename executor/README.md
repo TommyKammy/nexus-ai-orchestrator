@@ -170,9 +170,23 @@ Execute code in a new sandbox.
 - Send `Content-Type: application/json`.
 - Request body must be a JSON object.
 - Body size is capped by `EXECUTOR_MAX_REQUEST_BODY_BYTES` and returns `413` when exceeded.
+- These same POST requirements apply to `/execute`, `/session/create`, `/session/execute`, and `/session/destroy`.
 
 #### POST /session/create
 Create a persistent session.
+
+**curl example:**
+```bash
+curl -X POST http://localhost:8080/session/create \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: change-me" \
+  -d '{
+    "tenant_id": "t1",
+    "scope": "user:123",
+    "template": "python-ml",
+    "ttl": 300
+  }'
+```
 
 **Request:**
 ```json
@@ -197,6 +211,18 @@ Create a persistent session.
 #### POST /session/execute
 Execute code in an existing session.
 
+**curl example:**
+```bash
+curl -X POST http://localhost:8080/session/execute \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: change-me" \
+  -d '{
+    "session_id": "abc123def456",
+    "code": "print('\''In session'\'')",
+    "language": "python"
+  }'
+```
+
 **Request:**
 ```json
 {
@@ -208,6 +234,16 @@ Execute code in an existing session.
 
 #### POST /session/destroy
 Destroy a session.
+
+**curl example:**
+```bash
+curl -X POST http://localhost:8080/session/destroy \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: change-me" \
+  -d '{
+    "session_id": "abc123def456"
+  }'
+```
 
 **Request:**
 ```json
@@ -357,12 +393,16 @@ sudo netstat -tlnp | grep 8080
 ```bash
 # Increase timeout
 curl -X POST http://localhost:8080/execute \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: change-me" \
   -d '{
     "tenant_id": "t1",
     "scope": "test",
     "code": "...",
     "timeout": 120
   }'
+
+# Requests over EXECUTOR_MAX_REQUEST_BODY_BYTES return 413 before execution starts.
 ```
 
 ### Out of Memory
@@ -370,6 +410,8 @@ curl -X POST http://localhost:8080/execute \
 ```bash
 # Use larger template
 curl -X POST http://localhost:8080/execute \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: change-me" \
   -d '{
     "tenant_id": "t1",
     "scope": "test",

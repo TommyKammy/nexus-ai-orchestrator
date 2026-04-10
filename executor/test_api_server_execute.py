@@ -237,6 +237,37 @@ def test_execute_rejects_oversized_body_before_sandbox_run():
     sandbox_cls.assert_not_called()
 
 
+def test_execute_rejects_invalid_files_map_before_side_effects():
+    with patch("executor.api_server.API_KEY", None), patch(
+        "executor.api_server.policy_client.evaluate"
+    ) as evaluate_mock, patch("executor.api_server.policy_client.enforce") as enforce_mock, patch(
+        "executor.api_server.CodeSandbox"
+    ) as sandbox_cls:
+        server, thread = _start_server()
+        try:
+            status, payload = _post_json(
+                server.server_port,
+                "/execute",
+                {
+                    "tenant_id": "t1",
+                    "scope": "analysis",
+                    "code": "print('ok')",
+                    "files": {"a.txt": {"nested": 1}},
+                },
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    assert status == 400
+    assert payload["status"] == "error"
+    assert "files" in payload["error"]
+    evaluate_mock.assert_not_called()
+    enforce_mock.assert_not_called()
+    sandbox_cls.assert_not_called()
+
+
 def test_request_id_is_echoed_in_response_header():
     with patch("executor.api_server.API_KEY", None), patch(
         "executor.api_server.template_manager.get_sandbox_kwargs", return_value={}

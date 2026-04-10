@@ -421,6 +421,21 @@ class ExecutorHandler(BaseHTTPRequestHandler):
             raise RequestValidationError(f"Field '{field}' must be an object")
         return value
 
+    def _optional_string_map_field(self, body: Dict[str, Any], field: str) -> Dict[str, str]:
+        value = self._optional_dict_field(body, field)
+        normalized: Dict[str, str] = {}
+        for key, item in value.items():
+            if not isinstance(key, str) or not key.strip():
+                raise RequestValidationError(
+                    f"Field '{field}' must be a map of non-empty string paths to non-empty string contents"
+                )
+            if not isinstance(item, str) or not item.strip():
+                raise RequestValidationError(
+                    f"Field '{field}' must be a map of non-empty string paths to non-empty string contents"
+                )
+            normalized[key] = item
+        return normalized
+
     def _optional_int_field(self, body: Dict[str, Any], field: str, default: int) -> int:
         value = body.get(field, default)
         if isinstance(value, bool) or not isinstance(value, int):
@@ -668,7 +683,7 @@ class ExecutorHandler(BaseHTTPRequestHandler):
         language = self._optional_string_field(body, 'language', 'python')
         template = self._optional_string_field(body, 'template', 'default')
         task_type = self._optional_string_field(body, 'task_type', 'code_execution')
-        files = self._optional_dict_field(body, 'files')
+        files = self._optional_string_map_field(body, 'files')
         
         # Get template configuration
         template_kwargs = template_manager.get_sandbox_kwargs(template)
@@ -812,7 +827,7 @@ class ExecutorHandler(BaseHTTPRequestHandler):
         session_id = self._require_string_field(body, 'session_id')
         code = self._require_string_field(body, 'code')
         language = self._optional_string_field(body, 'language', 'python')
-        files = self._optional_dict_field(body, 'files')
+        files = self._optional_string_map_field(body, 'files')
 
         session = session_manager.get_session(session_id)
         scope = ""

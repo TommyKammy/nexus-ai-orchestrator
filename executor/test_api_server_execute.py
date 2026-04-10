@@ -152,7 +152,10 @@ def test_execute_returns_structured_output():
 
 
 def test_start_server_requires_executor_api_key():
-    with patch("executor.api_server.API_KEY", None), patch("executor.api_server.HTTPServer") as http_server:
+    with patch.dict(os.environ, {}, clear=False), patch(
+        "executor.api_server.API_KEY", None
+    ), patch("executor.api_server.HTTPServer") as http_server:
+        os.environ.pop("EXECUTOR_API_KEY", None)
         with pytest.raises(RuntimeError, match="EXECUTOR_API_KEY"):
             start_server(host="127.0.0.1", port=0)
 
@@ -191,7 +194,9 @@ def test_import_api_server_does_not_crash_on_invalid_max_request_body_env():
 
 
 def test_execute_requires_api_key_header_when_configured():
-    with patch("executor.api_server.API_KEY", "secret-key"):
+    with patch.dict(os.environ, {"EXECUTOR_API_KEY": "secret-key"}, clear=False), patch(
+        "executor.api_server.API_KEY", "secret-key"
+    ):
         server, thread = _start_server()
         try:
             status, payload = _post_json(
@@ -210,7 +215,9 @@ def test_execute_requires_api_key_header_when_configured():
 
 
 def test_execute_succeeds_with_api_key_header_when_configured():
-    with patch("executor.api_server.API_KEY", "secret-key"), patch(
+    with patch.dict(os.environ, {"EXECUTOR_API_KEY": "secret-key"}, clear=False), patch(
+        "executor.api_server.API_KEY", "secret-key"
+    ), patch(
         "executor.api_server.template_manager.get_sandbox_kwargs", return_value={}
     ), patch(
         "executor.api_server.policy_client.evaluate",

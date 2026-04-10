@@ -44,7 +44,8 @@ services:
       N8N_BASIC_AUTH_USER: admin
       N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASSWORD}
       N8N_WEBHOOK_API_KEY: ${N8N_WEBHOOK_API_KEY}
-      # Required by the shared webhook auth Code nodes; restrict workflow edit access because this exposes env vars to editable workflows.
+      # Temporary requirement for the shared webhook auth Code nodes; keep workflow edit access tightly restricted because this exposes env vars to editable workflows.
+      # Remove this override after the auth gate stops reading $env.N8N_WEBHOOK_API_KEY. See SECURITY.md for the operator runbook.
       N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
 
       N8N_HOST: ${N8N_HOST}

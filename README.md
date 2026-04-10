@@ -62,7 +62,7 @@ At minimum configure these in `.env`:
 
 Reference: `.env.example`
 
-For the current n8n webhook auth design, keep `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` on the `n8n` service so the shared `Code` nodes can read `$env.N8N_WEBHOOK_API_KEY`. This exposes container environment variables to editable `Code` nodes, so restrict workflow edit access and treat `SECURITY.md` as the operator runbook for that tradeoff until the auth gate moves off `$env`.
+For the current n8n webhook auth design, keep `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` on the `n8n` service so the shared `Code` nodes can read `$env.N8N_WEBHOOK_API_KEY`. This is a temporary exception: it exposes container environment variables to editable `Code` nodes, so restrict workflow edit access and treat `SECURITY.md` as the operator runbook until the auth gate moves off `$env` and this override can be removed.
 
 Policy enforcement defaults to `POLICY_MODE=enforce` and `POLICY_FAIL_MODE=closed`. Development-only advisory or fail-open overrides require explicit `POLICY_ALLOW_UNSAFE=true`.
 

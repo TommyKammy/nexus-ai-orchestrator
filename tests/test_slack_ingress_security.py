@@ -19,6 +19,10 @@ class SlackIngressSecurityTests(unittest.TestCase):
         self.assertNotIn("SLACK_INTERNAL_AUTH", caddyfile)
         self.assertNotIn("not path /webhook/slack-command /webhook/slack-command/*", caddyfile)
         self.assertIn("reverse_proxy slack-request-verifier:8089", caddyfile)
+        self.assertIn("handle_errors {", caddyfile)
+        self.assertIn("respond @rate_limited 429", caddyfile)
+        self.assertIn("rate_limit {", caddyfile)
+        self.assertIn("match {", caddyfile)
 
     def test_slack_workflows_keep_immediate_ack_and_router_auth(self):
         for workflow_path in WORKFLOW_PATHS:

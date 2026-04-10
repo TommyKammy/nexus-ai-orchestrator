@@ -10,63 +10,68 @@ n8n-s-app01.tmcast.net {
         X-Frame-Options "SAMEORIGIN"
     }
 
-    # Internal-only service prefixes must never be edge-routable.
-    @internal_only path /internal /internal/* /executor /executor/* /opa /opa/* /postgres /postgres/* /redis /redis/*
-    respond @internal_only 404
+    handle_errors {
+        @rate_limited expression `{err.status_code} == 429`
+        respond @rate_limited 429 {
+            body "Too Many Requests"
+        }
+    }
 
-    # Legacy Slack slash command paths - rewrite to n8n webhook
-    @slack_legacy path /slack/command /slack-command
-    rewrite @slack_legacy /webhook/slack-command
+    route {
+        # Internal-only service prefixes must never be edge-routable.
+        @internal_only path /internal /internal/* /executor /executor/* /opa /opa/* /postgres /postgres/* /redis /redis/*
+        respond @internal_only 404
 
-    # Rate limit all webhook traffic at the edge (30 req/min per source IP)
-    @webhook_rate_limited {
-        path /webhook/*
+        # Legacy Slack slash command paths - rewrite to n8n webhook
+        @slack_legacy path /slack/command /slack-command
+        rewrite @slack_legacy /webhook/slack-command
+
+        # Rate limit all webhook traffic at the edge (30 req/min per source IP)
         rate_limit {
             zone webhook_limit {
+                match {
+                    path /webhook/*
+                }
                 key {remote_host}
                 events 30
                 window 1m
             }
         }
-    }
 
-    respond @webhook_rate_limited 429 {
-        body "Too Many Requests"
-    }
+        @slack_command path /webhook/slack-command /webhook/slack-command/*
+        handle @slack_command {
+            reverse_proxy slack-request-verifier:8089
+        }
 
-    @slack_command path /webhook/slack-command /webhook/slack-command/*
-    handle @slack_command {
-        reverse_proxy slack-request-verifier:8089
-    }
+        # Block unauthorized webhook requests.
+        # Slack slash-command requests are verified by the internal slack-request-verifier
+        # service, so they are exempt from the shared API key matcher here.
+        @unauthorized `
+            path('/webhook/*')
+            && !path('/webhook/slack-command', '/webhook/slack-command/*')
+            && !(
+                header({'X-API-Key': {env.N8N_WEBHOOK_API_KEY}})
+                || header({'Authorization': 'Bearer ' + {env.N8N_WEBHOOK_API_KEY}})
+            )
+        `
 
-    # Block unauthorized webhook requests.
-    # Slack slash-command requests are verified by the internal slack-request-verifier
-    # service, so they are exempt from the shared API key matcher here.
-    @unauthorized `
-        path('/webhook/*')
-        && !path('/webhook/slack-command', '/webhook/slack-command/*')
-        && !(
-            header({'X-API-Key': {env.N8N_WEBHOOK_API_KEY}})
-            || header({'Authorization': 'Bearer ' + {env.N8N_WEBHOOK_API_KEY}})
-        )
-    `
+        respond @unauthorized 401 {
+            body "Unauthorized: Invalid or missing API key"
+        }
 
-    respond @unauthorized 401 {
-        body "Unauthorized: Invalid or missing API key"
-    }
+        # Lightweight policy registry UI
+        handle /policy-ui* {
+            reverse_proxy policy-bundle-server:8088
+        }
 
-    # Lightweight policy registry UI
-    handle /policy-ui* {
-        reverse_proxy policy-bundle-server:8088
-    }
-
-    # Main reverse proxy with proper headers for n8n UI auth
-    reverse_proxy n8n:5678 {
-        header_up Host {host}
-        header_up X-Real-IP {remote}
-        header_up X-Forwarded-For {remote}
-        header_up X-Forwarded-Proto {scheme}
-        # Upstream may emit its own X-Frame-Options; keep only the proxy value.
-        header_down -X-Frame-Options
+        # Main reverse proxy with proper headers for n8n UI auth
+        reverse_proxy n8n:5678 {
+            header_up Host {host}
+            header_up X-Real-IP {remote}
+            header_up X-Forwarded-For {remote}
+            header_up X-Forwarded-Proto {scheme}
+            # Upstream may emit its own X-Frame-Options; keep only the proxy value.
+            header_down -X-Frame-Options
+        }
     }
 }

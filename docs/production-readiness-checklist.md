@@ -6,6 +6,7 @@ Owner: <team-or-role>
 ## 1) Technical Gates
 
 - [ ] CI required checks green (`Quality Gates / quality-gates`, `Validate workflows / validate`, `Validate workflows / import-test`, `Policy Tests / policy-and-executor`, `Security Audit / security-audit`)
+- [ ] `main` branch protection enforces pull requests, at least one approval, and the documented required checks (`bash scripts/ci/branch_protection_check.sh`)
 - [ ] End-to-end suite passes (`pnpm e2e`, includes import test + compose core journey)
 - [ ] Kubernetes smoke validation completed (`scripts/ci/k8s_smoke_test.sh`)
 - [ ] Release workflow available for SemVer tags (`.github/workflows/release.yml`)

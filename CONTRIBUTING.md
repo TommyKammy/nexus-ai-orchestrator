@@ -10,6 +10,12 @@
 
 Direct pushes to `main` are not allowed.
 
+Protected-branch policy verification:
+
+```bash
+bash scripts/ci/branch_protection_check.sh
+```
+
 ## Required verification before merge
 
 ```bash

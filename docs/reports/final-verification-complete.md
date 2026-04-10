@@ -26,7 +26,7 @@ Documented all verification steps with timestamps and findings.
 **Command:**
 ```bash
 grep -r "slice(0, 1536)" /opt/ai-orchestrator/n8n/ 2>/dev/null || true
-grep -r "slice.*1536" /home/tommy/.dev/ai-orchestrator/n8n/workflows/*.json
+grep -r "slice.*1536" ./n8n/workflows/*.json
 ```
 
 **Findings:**
@@ -42,8 +42,8 @@ grep -r "slice.*1536" /home/tommy/.dev/ai-orchestrator/n8n/workflows/*.json
 ### ✅ Step 2: PCA Activation in Workflows
 
 **Workflows Updated:**
-1. `/home/tommy/.dev/ai-orchestrator/n8n/workflows/01_memory_ingest.json`
-2. `/home/tommy/.dev/ai-orchestrator/n8n/workflows/02_vector_search.json`
+1. `./n8n/workflows/01_memory_ingest.json`
+2. `./n8n/workflows/02_vector_search.json`
 
 **Changes Made:**
 
@@ -140,7 +140,7 @@ ae096d2 - feat: activate PCA reduction in workflows, configure logrotate, verify
 
 2. **Copy Updated Workflows:**
    ```bash
-   sudo cp /home/tommy/.dev/ai-orchestrator/n8n/workflows/*.json \
+   sudo cp ./n8n/workflows/*.json \
            /opt/ai-orchestrator/n8n/workflows-v3/
    ```
 
@@ -303,14 +303,14 @@ b495f14 - feat: Phase 2 hardening - response fixes, PCA, monitoring
 
 ```bash
 # Full deployment (run on production server)
-sudo /home/tommy/.dev/ai-orchestrator/deploy-phase3.sh
+sudo ./deploy-phase3.sh
 
 # Manual steps if needed:
 # 1. Generate PCA model
 cd /opt/ai-orchestrator/tools && python3 pca_reduce.py fit --source db --samples 5000
 
 # 2. Copy workflows
-sudo cp /home/tommy/.dev/ai-orchestrator/n8n/workflows/*.json /opt/ai-orchestrator/n8n/workflows-v3/
+sudo cp ./n8n/workflows/*.json /opt/ai-orchestrator/n8n/workflows-v3/
 
 # 3. Restart services
 cd /opt/ai-orchestrator && docker compose restart n8n
@@ -351,4 +351,3 @@ docker exec ai-postgres psql -U ai_user -d ai_memory -c "SELECT count(*) FROM me
 **Date:** 2026-02-14  
 **Status:** All tasks completed successfully  
 **Production Ready:** YES ✅
-

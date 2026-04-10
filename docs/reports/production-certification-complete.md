@@ -146,7 +146,7 @@ All Phase 3 deployment verifications completed successfully. The AI Orchestrator
 Execute on production server to activate automation:
 
 ```bash
-sudo /home/tommy/.dev/ai-orchestrator/deploy-phase3.sh
+sudo ./deploy-phase3.sh
 ```
 
 This will:
@@ -261,4 +261,3 @@ Execute `deploy-phase3.sh` on production server to activate full automation suit
 **END OF CERTIFICATION DOCUMENT**
 
 *This document certifies that the AI Orchestrator system has been fully implemented, tested, and verified as production-ready as of 2026-02-14 10:57 JST.*
-

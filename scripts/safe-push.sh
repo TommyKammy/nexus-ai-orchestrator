@@ -11,8 +11,9 @@
 set -euo pipefail
 
 # Configuration
-REPO_DIR="/home/tommy/.dev/ai-orchestrator"
-WORKLOG_DIR="/home/tommy/.dev/worklog/ai-orchestrator"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="${REPO_DIR:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
+WORKLOG_DIR="${WORKLOG_DIR:-${REPO_DIR}/worklog}"
 WORKFLOW_DIR="n8n/workflows-v3"
 
 # Colors for output

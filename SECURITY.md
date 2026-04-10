@@ -222,6 +222,31 @@ export EXECUTOR_ALLOWED_ORIGINS="https://console.example.com,https://ops.example
 export EXECUTOR_MAX_REQUEST_BODY_BYTES=1048576
 ```
 
+### n8n Webhook Authentication Contract
+
+All tenant-facing, executor-facing, policy-facing, and chat-facing n8n webhooks must enforce the shared webhook auth contract both at the edge and inside the workflow.
+
+- Required secret: `N8N_WEBHOOK_API_KEY`
+- Accepted request headers: `X-API-Key: <key>` or `Authorization: Bearer <key>`
+- Failure behavior: reject before side effects with `401 Unauthorized`
+- Slack slash-command ingress is the only webhook path that keeps its separate Slack signature flow
+
+This is intentional defense in depth. Caddy remains the first gate for `/webhook/*`, but the workflow JSON must also reject missing or invalid credentials so direct n8n access or partial routing drift does not bypass auth.
+
+Operator check:
+
+```bash
+curl -i -X POST "https://${N8N_HOST}/webhook/chat/router-v1" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: ${N8N_WEBHOOK_API_KEY}" \
+  -d '{"message":"health check"}'
+```
+
+Expected behavior:
+
+- Valid key: normal workflow response
+- Missing or invalid key: `401 Unauthorized`
+
 ### Production Mode
 
 Enable production mode for sanitized error messages:

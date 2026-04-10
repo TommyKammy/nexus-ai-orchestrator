@@ -9,9 +9,72 @@
       },
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [250, 300],
+      "position": [
+        250,
+        300
+      ],
       "webhookId": "memory-ingest-v3",
       "name": "Webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const request = $input.first().json;\nconst headers = (request.headers && typeof request.headers === 'object' && !Array.isArray(request.headers)) ? request.headers : {};\nconst headerValue = (value) => Array.isArray(value) ? String(value[0] || '').trim() : String(value || '').trim();\nconst expectedApiKey = String($env.N8N_WEBHOOK_API_KEY || '').trim();\nconst xApiKey = headerValue(headers['x-api-key'] ?? headers['X-API-Key']);\nconst authorization = headerValue(headers.authorization ?? headers.Authorization);\nconst bearerMatch = authorization.match(/^Bearer\\s+(.+)$/i);\nconst bearerToken = bearerMatch ? String(bearerMatch[1] || '').trim() : '';\nconst authenticated = Boolean(expectedApiKey) && (xApiKey === expectedApiKey || bearerToken === expectedApiKey);\n\nif (authenticated) {\n  return [{\n    json: {\n      ...request,\n      webhook_auth: {\n        authenticated: true,\n        header: xApiKey ? 'X-API-Key' : 'Authorization'\n      }\n    }\n  }];\n}\n\nconst message = expectedApiKey\n  ? 'Unauthorized: Invalid or missing API key'\n  : 'Unauthorized: N8N_WEBHOOK_API_KEY is not configured';\n\nreturn [{\n  json: {\n    ...request,\n    status: 'error',\n    message,\n    code: 401,\n    webhook_auth: {\n      authenticated: false\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        470,
+        300
+      ],
+      "name": "Check Webhook Auth"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "webhook-authenticated",
+              "leftValue": "={{ $json.webhook_auth && $json.webhook_auth.authenticated === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        690,
+        300
+      ],
+      "name": "Webhook Authorized?"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ ({ status: 'error', message: $json.message || 'Unauthorized: Invalid or missing API key' }) }}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        910,
+        180
+      ],
+      "name": "Unauthorized Response"
     },
     {
       "parameters": {
@@ -19,7 +82,10 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
-      "position": [450, 300],
+      "position": [
+        450,
+        300
+      ],
       "name": "Validate and Filter"
     },
     {
@@ -28,7 +94,10 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
-      "position": [650, 200],
+      "position": [
+        650,
+        200
+      ],
       "name": "Check Validation"
     },
     {
@@ -38,7 +107,10 @@
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [850, 200],
+      "position": [
+        850,
+        200
+      ],
       "name": "Error Response"
     },
     {
@@ -47,7 +119,10 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
-      "position": [850, 400],
+      "position": [
+        850,
+        400
+      ],
       "name": "Compute Hash"
     },
     {
@@ -60,7 +135,10 @@
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
-      "position": [1050, 400],
+      "position": [
+        1050,
+        400
+      ],
       "name": "Check Cache",
       "credentials": {
         "postgres": {
@@ -75,7 +153,10 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
-      "position": [1250, 400],
+      "position": [
+        1250,
+        400
+      ],
       "name": "If Cached"
     },
     {
@@ -85,7 +166,10 @@
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [1450, 200],
+      "position": [
+        1450,
+        200
+      ],
       "name": "Cache Hit Response"
     },
     {
@@ -96,7 +180,10 @@
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
-      "position": [1450, 500],
+      "position": [
+        1450,
+        500
+      ],
       "name": "Insert Facts",
       "credentials": {
         "postgres": {
@@ -134,7 +221,10 @@
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1650, 500],
+      "position": [
+        1650,
+        500
+      ],
       "name": "Generate Embedding"
     },
     {
@@ -143,7 +233,10 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
-      "position": [1850, 500],
+      "position": [
+        1850,
+        500
+      ],
       "name": "Parse Embedding"
     },
     {
@@ -154,7 +247,10 @@
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
-      "position": [2050, 500],
+      "position": [
+        2050,
+        500
+      ],
       "name": "Insert Vector",
       "credentials": {
         "postgres": {
@@ -171,7 +267,10 @@
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
-      "position": [2250, 500],
+      "position": [
+        2250,
+        500
+      ],
       "name": "Insert Audit",
       "credentials": {
         "postgres": {
@@ -187,7 +286,10 @@
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [2450, 500],
+      "position": [
+        2450,
+        500
+      ],
       "name": "Success Response"
     }
   ],
@@ -196,7 +298,7 @@
       "main": [
         [
           {
-            "node": "Validate and Filter",
+            "node": "Check Webhook Auth",
             "type": "main",
             "index": 0
           }
@@ -317,6 +419,35 @@
         [
           {
             "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Webhook Auth": {
+      "main": [
+        [
+          {
+            "node": "Webhook Authorized?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Authorized?": {
+      "main": [
+        [
+          {
+            "node": "Validate and Filter",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Unauthorized Response",
             "type": "main",
             "index": 0
           }

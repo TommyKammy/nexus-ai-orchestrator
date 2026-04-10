@@ -2,6 +2,16 @@
 
 This directory contains 4 workflow JSON files for the AI orchestration system.
 
+## Shared Webhook Authentication
+
+All non-Slack n8n webhook entry points are expected to enforce the same auth contract before any workflow side effects run.
+
+- Required secret: `N8N_WEBHOOK_API_KEY`
+- Accepted request headers: `X-API-Key: <key>` or `Authorization: Bearer <key>`
+- Failure behavior: invalid or missing credentials return `401 Unauthorized`
+
+Examples in this document use `X-API-Key` so they stay aligned with the default Caddy policy.
+
 ## Workflows
 
 ### 01_memory_ingest.json
@@ -144,6 +154,7 @@ All workflows have been tested and are working:
 ```bash
 curl -X POST 'https://n8n-s-app01.tmcast.net/webhook/memory/ingest' \
   -H 'Content-Type: application/json' \
+  -H 'X-API-Key: YOUR_WEBHOOK_KEY' \
   -d '{"tenant_id":"t1","scope":"user:123","text":"User prefers PDF reports.","facts":[{"subject":"user:123","predicate":"prefers","object":"PDF","confidence":0.9}],"tags":["preference"],"source":"explicit"}'
 ```
 **Result:** ✓ Data inserted into memory_facts, memory_vectors, audit_events
@@ -152,6 +163,7 @@ curl -X POST 'https://n8n-s-app01.tmcast.net/webhook/memory/ingest' \
 ```bash
 curl -X POST 'https://n8n-s-app01.tmcast.net/webhook/memory/search' \
   -H 'Content-Type: application/json' \
+  -H 'X-API-Key: YOUR_WEBHOOK_KEY' \
   -d '{"scope":"user:123","query":"PDF","k":5}'
 ```
 **Result:** ✓ Query executed and audit event logged
@@ -160,6 +172,7 @@ curl -X POST 'https://n8n-s-app01.tmcast.net/webhook/memory/search' \
 ```bash
 curl -X POST 'https://n8n-s-app01.tmcast.net/webhook/audit/append' \
   -H 'Content-Type: application/json' \
+  -H 'X-API-Key: YOUR_WEBHOOK_KEY' \
   -d '{"actor":"test:user","action":"test_action","target":"user:123","decision":"allowed","payload":{"test":true}}'
 ```
 **Result:** ✓ Audit event stored with payload_jsonb
@@ -168,6 +181,7 @@ curl -X POST 'https://n8n-s-app01.tmcast.net/webhook/audit/append' \
 ```bash
 curl -X POST 'https://n8n-s-app01.tmcast.net/webhook/executor/run' \
   -H 'Content-Type: application/json' \
+  -H 'X-API-Key: YOUR_WEBHOOK_KEY' \
   -d '{"tenant_id":"t1","scope":"user:123","task":{"type":"ping","message":"hello"}}'
 ```
 **Result:** ✓ Episode recorded in memory_episodes

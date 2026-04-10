@@ -18,6 +18,66 @@
     },
     {
       "parameters": {
+        "jsCode": "const request = $input.first().json;\nconst headers = (request.headers && typeof request.headers === 'object' && !Array.isArray(request.headers)) ? request.headers : {};\nconst headerValue = (value) => Array.isArray(value) ? String(value[0] || '').trim() : String(value || '').trim();\nconst expectedApiKey = String($env.N8N_WEBHOOK_API_KEY || '').trim();\nconst xApiKey = headerValue(headers['x-api-key'] ?? headers['X-API-Key']);\nconst authorization = headerValue(headers.authorization ?? headers.Authorization);\nconst bearerMatch = authorization.match(/^Bearer\\s+(.+)$/i);\nconst bearerToken = bearerMatch ? String(bearerMatch[1] || '').trim() : '';\nconst authenticated = Boolean(expectedApiKey) && (xApiKey === expectedApiKey || bearerToken === expectedApiKey);\n\nif (authenticated) {\n  return [{\n    json: {\n      ...request,\n      webhook_auth: {\n        authenticated: true,\n        header: xApiKey ? 'X-API-Key' : 'Authorization'\n      }\n    }\n  }];\n}\n\nconst message = expectedApiKey\n  ? 'Unauthorized: Invalid or missing API key'\n  : 'Unauthorized: N8N_WEBHOOK_API_KEY is not configured';\n\nreturn [{\n  json: {\n    ...request,\n    status: 'error',\n    message,\n    code: 401,\n    webhook_auth: {\n      authenticated: false\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        470,
+        300
+      ],
+      "name": "Check Webhook Auth"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "webhook-authenticated",
+              "leftValue": "={{ $json.webhook_auth && $json.webhook_auth.authenticated === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        690,
+        300
+      ],
+      "name": "Webhook Authorized?"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ ({ status: 'error', message: $json.message || 'Unauthorized: Invalid or missing API key' }) }}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        910,
+        180
+      ],
+      "name": "Unauthorized Response"
+    },
+    {
+      "parameters": {
         "jsCode": "const crypto = require('crypto');\n\n// Validate input\nconst input = $input.first().json.body;\nconst normalizedText = String(input?.text || '').trim();\n\nif (!input?.tenant_id || !input?.scope || !normalizedText) {\n  return [{\n    json: {\n      error: 'Missing required fields: tenant_id, scope, text'\n    }\n  }];\n}\n\n// Secret patterns to reject\nconst secretPatterns = [\n  /api[_-]?key/i,\n  /bearer\\s+[A-Za-z0-9-_.]+/i,\n  /-----BEGIN(.*?)PRIVATE KEY-----/i\n];\n\n// Check for secrets in text\nif (secretPatterns.some((p) => p.test(normalizedText))) {\n  return [{\n    json: {\n      error: 'Rejected: potential secret detected in text'\n    }\n  }];\n}\n\n// Filter facts - only keep those with confidence >= 0.75 OR source == explicit\nconst filteredFacts = (input.facts || []).filter((f) => {\n  // Check for secrets in fact fields\n  const factText = `${f.subject || ''} ${f.predicate || ''} ${f.object || ''}`;\n  if (secretPatterns.some((p) => p.test(factText))) {\n    return false;\n  }\n\n  // Apply commit rules\n  if (f.confidence >= 0.75 || input.source === 'explicit') {\n    // Reject if subject/predicate/object empty\n    if (!f.subject || !f.predicate || !f.object) {\n      return false;\n    }\n    return true;\n  }\n  return false;\n});\n\nconst requestId = input.request_id || `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;\nconst source = String(input.source || 'unknown');\nconst tags = Array.isArray(input.tags) ? input.tags : [];\nconst metadata = (input.metadata && typeof input.metadata === 'object' && !Array.isArray(input.metadata))\n  ? input.metadata\n  : {};\nconst contentHash = crypto.createHash('sha256').update(normalizedText, 'utf8').digest('hex');\n\nreturn [{\n  json: {\n    tenant_id: input.tenant_id,\n    scope: input.scope,\n    text: normalizedText,\n    facts: filteredFacts,\n    source,\n    tags,\n    metadata,\n    request_id: requestId,\n    content_hash: contentHash\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
@@ -226,7 +286,7 @@
       "main": [
         [
           {
-            "node": "Validate and Filter",
+            "node": "Check Webhook Auth",
             "type": "main",
             "index": 0
           }
@@ -347,6 +407,35 @@
         [
           {
             "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Webhook Auth": {
+      "main": [
+        [
+          {
+            "node": "Webhook Authorized?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Authorized?": {
+      "main": [
+        [
+          {
+            "node": "Validate and Filter",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Unauthorized Response",
             "type": "main",
             "index": 0
           }

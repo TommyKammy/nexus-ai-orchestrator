@@ -16,7 +16,7 @@ jobs:
           python-version: "3.11"
 
       - name: Validate Slack workflows
-        run: python3 scripts/validate_slack_workflows.py n8n/workflows-v3
+        run: python3 scripts/validate_slack_workflows.py n8n/workflows-v3 n8n/workflows
 
       - name: Check Slack ingress security regression
         run: python3 -m unittest -v tests.test_slack_ingress_security

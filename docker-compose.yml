@@ -116,7 +116,7 @@ services:
     container_name: ai-slack-request-verifier
     restart: always
     environment:
-      SLACK_SIGNING_SECRET: ${SLACK_SIGNING_SECRET}
+      SLACK_SIGNING_SECRET: ${SLACK_SIGNING_SECRET:?set SLACK_SIGNING_SECRET}
       SLACK_VERIFIER_PORT: 8089
       N8N_INTERNAL_BASE_URL: http://n8n:5678
 

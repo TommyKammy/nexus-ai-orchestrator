@@ -8,6 +8,7 @@ import time
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import urlsplit
 
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -25,6 +26,14 @@ def _header_value(value):
     if isinstance(value, list):
         return str(value[0] if value else "").strip()
     return str(value or "").strip()
+
+
+def _build_upstream_url(path):
+    upstream_url = f"{N8N_INTERNAL_BASE_URL}{path}"
+    parsed = urlsplit(upstream_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError(f"Invalid upstream URL: {upstream_url}")
+    return upstream_url
 
 
 def verify_request(request, signing_secret=None, now=None):
@@ -146,19 +155,30 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json(200, response)
 
     def _proxy_to_n8n(self, body):
-        upstream_url = f"{N8N_INTERNAL_BASE_URL}{self.path}"
+        try:
+            upstream_url = _build_upstream_url(self.path)
+        except ValueError as error:
+            LOGGER.error(
+                "Invalid upstream target base=%s path=%s error=%s",
+                N8N_INTERNAL_BASE_URL,
+                self.path,
+                error,
+            )
+            self._send_json(502, {"ok": False, "error": "Upstream unavailable"})
+            return
+
         headers = {
             key: value
             for key, value in self.headers.items()
             if key.lower() not in {"host", "content-length", "connection"}
         }
-        request = urllib.request.Request(
-            upstream_url,
-            data=body,
-            headers=headers,
-            method="POST",
-        )
         try:
+            request = urllib.request.Request(
+                upstream_url,
+                data=body,
+                headers=headers,
+                method="POST",
+            )
             with urllib.request.urlopen(request, timeout=30) as response:
                 response_body = response.read()
                 self.send_response(response.getcode())
@@ -177,6 +197,14 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header(key, value)
             self.end_headers()
             self.wfile.write(response_body)
+        except urllib.error.URLError as error:
+            LOGGER.error(
+                "Upstream request failed base=%s path=%s error=%s",
+                N8N_INTERNAL_BASE_URL,
+                self.path,
+                error,
+            )
+            self._send_json(502, {"ok": False, "error": "Upstream unavailable"})
 
 
 def main():

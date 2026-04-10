@@ -270,7 +270,6 @@ $("#publishForm").addEventListener("submit", async (e) => {
 
     if (!confirm(msg)) return;
 
-    sessionStorage.setItem("policyUiPublishApiKey", publishApiKey);
     const result = await apiPost("/policy-ui/api/publish", payload, {
       headers: { "X-API-Key": publishApiKey },
     });
@@ -328,9 +327,6 @@ $("#refreshAll").addEventListener("click", async () => {
 
 (async () => {
   try {
-    if (publishApiKeyInput) {
-      publishApiKeyInput.value = sessionStorage.getItem("policyUiPublishApiKey") || "";
-    }
     await Promise.all([loadRules(), loadRuntime(), loadCandidates()]);
     const form = $("#upsertForm");
     setAdvancedVisibility(form);

@@ -22,7 +22,11 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 1
 fi
 
-protection_json="$(gh api "repos/${repo}/branches/${branch}/protection")"
+if ! protection_json="$(gh api "repos/${repo}/branches/${branch}/protection" 2>/dev/null)"; then
+  echo "Branch protection policy check failed:" >&2
+  echo "- unable to read branch protection for ${repo}:${branch} (verify branch exists and gh auth/token scopes)" >&2
+  exit 1
+fi
 
 required_status_json="$(
   gh api "repos/${repo}/branches/${branch}/protection/required_status_checks" 2>/dev/null || true

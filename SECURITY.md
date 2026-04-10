@@ -227,6 +227,7 @@ export EXECUTOR_MAX_REQUEST_BODY_BYTES=1048576
 All tenant-facing, executor-facing, policy-facing, and chat-facing n8n webhooks must enforce the shared webhook auth contract both at the edge and inside the workflow.
 
 - Required secret: `N8N_WEBHOOK_API_KEY`
+- Runtime requirement: keep `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` for the n8n service, because the shared webhook auth `Code` nodes read `N8N_WEBHOOK_API_KEY` via `$env`
 - Accepted request headers: `X-API-Key: <key>` or `Authorization: Bearer <key>`
 - Failure behavior: reject before side effects with `401 Unauthorized`
 - Slack slash-command ingress is the only webhook path that keeps its separate Slack signature flow

@@ -24,6 +24,7 @@ POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-n8n}"
 N8N_PORT="${N8N_PORT:-5678}"
 TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-480}"
 N8N_ENCRYPTION_KEY="${N8N_ENCRYPTION_KEY:-test-key-for-ci-only}"
+N8N_WEBHOOK_API_KEY="${N8N_WEBHOOK_API_KEY:-ci-local-webhook-key}"
 WEBHOOK_BASE_URL="${WEBHOOK_BASE_URL:-http://localhost:${N8N_PORT}}"
 
 # Workflows
@@ -36,6 +37,11 @@ CI_IMPORT_DIR=""
 WORKLOG="${WORKLOG:-/dev/null}"
 
 cleanup() {
+  if [[ "${SKIP_CLEANUP:-0}" == "1" ]]; then
+    echo ""
+    echo "[cleanup] SKIP_CLEANUP=1, leaving containers/network/tmp in place for inspection."
+    return 0
+  fi
   echo ""
   echo "[cleanup] Removing containers/network/tmp..."
   docker rm -f -v "${N8N_CONTAINER}" >/dev/null 2>&1 || true
@@ -166,8 +172,11 @@ PY
 }
 
 discover_workflows() {
-  mapfile -t WORKFLOW_FILES < <(
-    find "${WORKFLOW_DIR}" -maxdepth 1 -type f -name '*.json' -printf '%f\n' | sort
+  WORKFLOW_FILES=()
+  while IFS= read -r workflow_file; do
+    WORKFLOW_FILES+=("${workflow_file}")
+  done < <(
+    find "${WORKFLOW_DIR}" -maxdepth 1 -type f -name '*.json' -exec basename {} \; | sort
   )
 
   if [[ "${#WORKFLOW_FILES[@]}" -eq 0 ]]; then
@@ -316,6 +325,8 @@ SQL
     -e N8N_USER_MANAGEMENT_DISABLED=true \
     -e N8N_BASIC_AUTH_ACTIVE=false \
     -e N8N_ENCRYPTION_KEY="${N8N_ENCRYPTION_KEY}" \
+    -e N8N_WEBHOOK_API_KEY="${N8N_WEBHOOK_API_KEY}" \
+    -e N8N_BLOCK_ENV_ACCESS_IN_NODE=false \
     -e WEBHOOK_URL="${WEBHOOK_BASE_URL}" \
     -e N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=false \
     -e SLACK_SIG_VERIFY_ENABLED=false \
@@ -331,7 +342,7 @@ SQL
   fi
   echo ""
 
-  echo "[4/5] Verifying activation and router webhook (no creds)..."
+  echo "[4/5] Verifying activation and router webhook auth contract..."
   
   # Deterministic verification 1: DB shows workflows active (already verified in step 4)
   echo "      Checking DB activation state..."
@@ -359,20 +370,50 @@ SELECT id, name, active FROM workflow_entity WHERE active = true;
   # Payload must match what chat_router_v1 expects: tenant_id, scope, message (or text)
   PAYLOAD='{"tenant_id":"ci-tenant","scope":"ci-test","text":"ci test message","brain_enabled":false}'
 
-  echo "      Calling webhook: ${WEBHOOK_URL}"
-  # Use curl write-out for deterministic HTTP status extraction (avoids tail -n + parsing)
+  echo "      Calling webhook without auth: ${WEBHOOK_URL}"
   HTTP_STATUS="$(curl -sS -o /tmp/webhook_body.txt -w '%{http_code}' \
-    -X POST -H 'Content-Type: application/json' -d "${PAYLOAD}" "${WEBHOOK_URL}" \
+    -X POST \
+    -H 'Content-Type: application/json' \
+    -d "${PAYLOAD}" "${WEBHOOK_URL}" \
     2>/tmp/webhook_err.txt || true)"
   BODY="$(cat /tmp/webhook_body.txt 2>/dev/null || true)"
   ERR="$(cat /tmp/webhook_err.txt 2>/dev/null || true)"
-  
-  echo "      HTTP Status: ${HTTP_STATUS}"
-  echo "      Body: ${BODY}"
+
+  echo "      HTTP Status (no auth): ${HTTP_STATUS}"
+  echo "      Body (no auth): ${BODY}"
   if [[ -n "${ERR}" ]]; then
-    echo "      Curl stderr: ${ERR}"
+    echo "      Curl stderr (no auth): ${ERR}"
   fi
-  
+
+  if [[ "${HTTP_STATUS}" != "401" ]]; then
+    echo ""
+    echo "ERROR: Webhook endpoint did not reject unauthenticated request"
+    echo ""
+    echo "[debug] n8n logs (tail 400):"
+    docker logs --tail 400 "${N8N_CONTAINER}" 2>&1 | tee -a "$WORKLOG"
+    die "router webhook unauthenticated call expected 401 got ${HTTP_STATUS}"
+  fi
+
+  if ! echo "${BODY}" | grep -q '"status"[[:space:]]*:[[:space:]]*"error"'; then
+    die "router webhook unauthenticated response did not include status=error"
+  fi
+
+  echo "      Calling webhook with auth: ${WEBHOOK_URL}"
+  HTTP_STATUS="$(curl -sS -o /tmp/webhook_body.txt -w '%{http_code}' \
+    -X POST \
+    -H 'Content-Type: application/json' \
+    -H "X-API-Key: ${N8N_WEBHOOK_API_KEY}" \
+    -d "${PAYLOAD}" "${WEBHOOK_URL}" \
+    2>/tmp/webhook_err.txt || true)"
+  BODY="$(cat /tmp/webhook_body.txt 2>/dev/null || true)"
+  ERR="$(cat /tmp/webhook_err.txt 2>/dev/null || true)"
+
+  echo "      HTTP Status (auth): ${HTTP_STATUS}"
+  echo "      Body (auth): ${BODY}"
+  if [[ -n "${ERR}" ]]; then
+    echo "      Curl stderr (auth): ${ERR}"
+  fi
+
   if [[ "${HTTP_STATUS}" != "200" ]]; then
     echo ""
     echo "ERROR: Webhook endpoint returned non-200 status"
@@ -395,11 +436,11 @@ LIMIT 3;
     echo ""
     echo "[debug] n8n logs (tail 400):"
     docker logs --tail 400 "${N8N_CONTAINER}" 2>&1 | tee -a "$WORKLOG"
-    die "router webhook call failed, expected 200 got ${HTTP_STATUS}"
+    die "router webhook authenticated call failed, expected 200 got ${HTTP_STATUS}"
   fi
 
   if ! echo "${BODY}" | grep -q '"status"[[:space:]]*:[[:space:]]*"NO_BRAIN"'; then
-    die "router webhook did not return status=NO_BRAIN"
+    die "router webhook authenticated response did not return status=NO_BRAIN"
   fi
 
   echo ""

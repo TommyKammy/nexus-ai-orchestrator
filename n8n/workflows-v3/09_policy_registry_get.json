@@ -9,9 +9,72 @@
       },
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [260, 300],
+      "position": [
+        260,
+        300
+      ],
       "name": "Webhook",
       "webhookId": "policy-registry-get"
+    },
+    {
+      "parameters": {
+        "jsCode": "const request = $input.first().json;\nconst rawHeaders = (request.headers && typeof request.headers === 'object' && !Array.isArray(request.headers)) ? request.headers : {};\nconst headers = Object.fromEntries(\n  Object.entries(rawHeaders).map(([key, value]) => [String(key).toLowerCase(), value])\n);\nconst sanitizedHeaders = Object.fromEntries(\n  Object.entries(rawHeaders).filter(([key]) => {\n    const normalizedKey = String(key).toLowerCase();\n    return normalizedKey !== 'x-api-key' && normalizedKey !== 'authorization';\n  })\n);\nconst sanitizedRequest = {\n  ...request,\n  headers: sanitizedHeaders\n};\nconst headerValue = (value) => Array.isArray(value) ? String(value[0] || '').trim() : String(value || '').trim();\nconst expectedApiKey = String($env.N8N_WEBHOOK_API_KEY || '').trim();\nconst xApiKey = headerValue(headers['x-api-key']);\nconst authorization = headerValue(headers.authorization);\nconst bearerMatch = authorization.match(/^Bearer\\s+(.+)$/i);\nconst bearerToken = bearerMatch ? String(bearerMatch[1] || '').trim() : '';\nconst matchedXApiKey = Boolean(expectedApiKey) && xApiKey === expectedApiKey;\nconst matchedBearer = Boolean(expectedApiKey) && bearerToken === expectedApiKey;\nconst authenticated = matchedXApiKey || matchedBearer;\n\nif (authenticated) {\n  return [{\n    json: {\n      ...sanitizedRequest,\n      webhook_auth: {\n        authenticated: true,\n        header: matchedXApiKey ? 'X-API-Key' : 'Authorization'\n      }\n    },\n    pairedItem: {\n      item: 0\n    }\n  }];\n}\n\nconst message = 'Unauthorized: Invalid or missing API key';\n\nreturn [{\n  json: {\n    ...sanitizedRequest,\n    status: 'error',\n    message,\n    code: 401,\n    webhook_auth: {\n      authenticated: false\n    }\n  },\n  pairedItem: {\n    item: 0\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ],
+      "name": "Check Webhook Auth"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "webhook-authenticated",
+              "leftValue": "={{ $json.webhook_auth && $json.webhook_auth.authenticated === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        700,
+        300
+      ],
+      "name": "Webhook Authorized?"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ ({ status: 'error', message: $json.message || 'Unauthorized: Invalid or missing API key' }) }}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        920,
+        180
+      ],
+      "name": "Unauthorized Response"
     },
     {
       "parameters": {
@@ -19,7 +82,10 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [470, 300],
+      "position": [
+        470,
+        300
+      ],
       "name": "Validate Query"
     },
     {
@@ -46,7 +112,10 @@
       },
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [680, 300],
+      "position": [
+        680,
+        300
+      ],
       "name": "Validation Error?"
     },
     {
@@ -56,7 +125,10 @@
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
-      "position": [900, 360],
+      "position": [
+        900,
+        360
+      ],
       "name": "Get Workflow Rule",
       "credentials": {
         "postgres": {
@@ -72,7 +144,10 @@
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [1130, 360],
+      "position": [
+        1130,
+        360
+      ],
       "name": "Success Response"
     },
     {
@@ -82,25 +157,93 @@
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [900, 180],
+      "position": [
+        900,
+        180
+      ],
       "name": "Error Response"
     }
   ],
   "connections": {
     "Webhook": {
-      "main": [[{ "node": "Validate Query", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Check Webhook Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Validate Query": {
-      "main": [[{ "node": "Validation Error?", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Validation Error?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Validation Error?": {
       "main": [
-        [{ "node": "Error Response", "type": "main", "index": 0 }],
-        [{ "node": "Get Workflow Rule", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Workflow Rule",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Get Workflow Rule": {
-      "main": [[{ "node": "Success Response", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Webhook Auth": {
+      "main": [
+        [
+          {
+            "node": "Webhook Authorized?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Authorized?": {
+      "main": [
+        [
+          {
+            "node": "Validate Query",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Unauthorized Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
@@ -109,5 +252,9 @@
     "saveManualExecutions": true
   },
   "staticData": null,
-  "tags": ["policy", "registry", "ce"]
+  "tags": [
+    "policy",
+    "registry",
+    "ce"
+  ]
 }

@@ -49,11 +49,15 @@ n8n-s-app01.tmcast.net {
         body "Too Many Requests"
     }
 
-    # Block unauthorized webhook requests (API key protection for all other webhooks)
-    @unauthorized {
-        path /webhook/*
-        not header X-API-Key {env.N8N_WEBHOOK_API_KEY}
-    }
+    # Block unauthorized webhook requests (shared key protection for all other webhooks)
+    @unauthorized `
+        path('/webhook/*')
+        && !path('/webhook/slack-command', '/webhook/slack-command/*')
+        && !(
+            header({'X-API-Key': {env.N8N_WEBHOOK_API_KEY}})
+            || header({'Authorization': 'Bearer ' + {env.N8N_WEBHOOK_API_KEY}})
+        )
+    `
 
     respond @unauthorized 401 {
         body "Unauthorized: Invalid or missing API key"

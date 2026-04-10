@@ -18,6 +18,66 @@
     },
     {
       "parameters": {
+        "jsCode": "const request = $input.first().json;\nconst rawHeaders = (request.headers && typeof request.headers === 'object' && !Array.isArray(request.headers)) ? request.headers : {};\nconst headers = Object.fromEntries(\n  Object.entries(rawHeaders).map(([key, value]) => [String(key).toLowerCase(), value])\n);\nconst sanitizedHeaders = Object.fromEntries(\n  Object.entries(rawHeaders).filter(([key]) => {\n    const normalizedKey = String(key).toLowerCase();\n    return normalizedKey !== 'x-api-key' && normalizedKey !== 'authorization';\n  })\n);\nconst sanitizedRequest = {\n  ...request,\n  headers: sanitizedHeaders\n};\nconst headerValue = (value) => Array.isArray(value) ? String(value[0] || '').trim() : String(value || '').trim();\nconst expectedApiKey = String($env.N8N_WEBHOOK_API_KEY || '').trim();\nconst xApiKey = headerValue(headers['x-api-key']);\nconst authorization = headerValue(headers.authorization);\nconst bearerMatch = authorization.match(/^Bearer\\s+(.+)$/i);\nconst bearerToken = bearerMatch ? String(bearerMatch[1] || '').trim() : '';\nconst matchedXApiKey = Boolean(expectedApiKey) && xApiKey === expectedApiKey;\nconst matchedBearer = Boolean(expectedApiKey) && bearerToken === expectedApiKey;\nconst authenticated = matchedXApiKey || matchedBearer;\n\nif (authenticated) {\n  return [{\n    json: {\n      ...sanitizedRequest,\n      webhook_auth: {\n        authenticated: true,\n        header: matchedXApiKey ? 'X-API-Key' : 'Authorization'\n      }\n    },\n    pairedItem: {\n      item: 0\n    }\n  }];\n}\n\nconst message = 'Unauthorized: Invalid or missing API key';\n\nreturn [{\n  json: {\n    ...sanitizedRequest,\n    status: 'error',\n    message,\n    code: 401,\n    webhook_auth: {\n      authenticated: false\n    }\n  },\n  pairedItem: {\n    item: 0\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        470,
+        300
+      ],
+      "name": "Check Webhook Auth"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "webhook-authenticated",
+              "leftValue": "={{ $json.webhook_auth && $json.webhook_auth.authenticated === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        690,
+        300
+      ],
+      "name": "Webhook Authorized?"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ ({ status: 'error', message: $json.message || 'Unauthorized: Invalid or missing API key' }) }}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        910,
+        180
+      ],
+      "name": "Unauthorized Response"
+    },
+    {
+      "parameters": {
         "jsCode": "const rawBody = $input.first()?.json?.body;\nconst input = (rawBody && typeof rawBody === 'object' && !Array.isArray(rawBody)) ? rawBody : {};\n\nconst tenantId = String(input.tenant_id || '').trim();\nconst scope = String(input.scope || '').trim();\nconst task = input.task;\n\nif (!tenantId || !scope || !task) {\n  return [{\n    json: {\n      error: 'Missing required fields: tenant_id, scope, task'\n    }\n  }];\n}\n\nif (typeof task !== 'object' || task === null || Array.isArray(task)) {\n  return [{\n    json: {\n      error: 'task must be an object'\n    }\n  }];\n}\n\nconst requestId = String(input.request_id || '').trim() || `req-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;\n\nconst output = {\n  timestamp: new Date().toISOString(),\n  task,\n  status: 'received',\n  executor: 'ai-executor'\n};\n\nreturn [{\n  json: {\n    tenant_id: tenantId,\n    scope,\n    task,\n    output,\n    outcome: 'ok',\n    request_id: requestId\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
@@ -307,7 +367,7 @@
       "main": [
         [
           {
-            "node": "Validate and Execute",
+            "node": "Check Webhook Auth",
             "type": "main",
             "index": 0
           }
@@ -483,6 +543,35 @@
         [
           {
             "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Webhook Auth": {
+      "main": [
+        [
+          {
+            "node": "Webhook Authorized?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Authorized?": {
+      "main": [
+        [
+          {
+            "node": "Validate and Execute",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Unauthorized Response",
             "type": "main",
             "index": 0
           }

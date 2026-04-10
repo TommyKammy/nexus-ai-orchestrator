@@ -285,6 +285,7 @@ post_webhook() {
   local response http_code body
   response="$(
     curl_internal -sS -w $'\n%{http_code}' -H "Content-Type: application/json" \
+      -H "X-API-Key: ${N8N_WEBHOOK_API_KEY}" \
       -X POST "http://localhost:5678/webhook/${path}" \
       -d "$payload"
   )"

@@ -471,9 +471,9 @@ def test_policy_metrics_exposed_for_decisions_errors_and_latency():
             "error": None,
         },
         {
-            "decision": "allow",
-            "allow": True,
-            "requires_approval": False,
+            "decision": "deny",
+            "allow": False,
+            "requires_approval": True,
             "risk_score": 0,
             "reasons": ["policy_unavailable"],
             "error": "opa timeout",
@@ -540,37 +540,37 @@ def test_policy_metrics_exposed_for_decisions_errors_and_latency():
     assert allow_payload["status"] == "success"
     assert deny_status == 403
     assert deny_payload["status"] == "error"
-    assert fallback_status == 200
-    assert fallback_payload["status"] == "success"
+    assert fallback_status == 403
+    assert fallback_payload["status"] == "error"
     assert fallback_payload["policy"]["error"] == "opa timeout"
 
     assert metrics_status == 200
     policy_metrics = metrics_payload["metrics"]["policy"]
     request_metrics = metrics_payload["metrics"]["requests"]
     assert policy_metrics["total"] == 3
-    assert policy_metrics["allow"] == 2
-    assert policy_metrics["deny"] == 1
+    assert policy_metrics["allow"] == 1
+    assert policy_metrics["deny"] == 2
     assert policy_metrics["requires_approval"] == 0
     assert policy_metrics["errors"] == 1
     assert policy_metrics["latency_ms_count"] == 3
     assert round(policy_metrics["latency_ms_sum"], 3) == 60.0
     assert request_metrics["total"] == 3
-    assert request_metrics["errors"] == 1
+    assert request_metrics["errors"] == 2
     assert request_metrics["methods"]["POST"] == 3
-    assert request_metrics["statuses"]["200"] == 2
-    assert request_metrics["statuses"]["403"] == 1
+    assert request_metrics["statuses"]["200"] == 1
+    assert request_metrics["statuses"]["403"] == 2
 
     assert prom_status == 200
     assert "executor_policy_eval_total 3" in prom_body
-    assert 'executor_policy_decisions_total{decision="allow"} 2' in prom_body
-    assert 'executor_policy_decisions_total{decision="deny"} 1' in prom_body
+    assert 'executor_policy_decisions_total{decision="allow"} 1' in prom_body
+    assert 'executor_policy_decisions_total{decision="deny"} 2' in prom_body
     assert "executor_policy_eval_errors_total 1" in prom_body
     assert "executor_policy_eval_latency_ms_sum 60.000" in prom_body
     assert "executor_policy_eval_latency_ms_count 3" in prom_body
     assert "executor_policy_eval_latency_ms_avg 20.000" in prom_body
     assert "executor_policy_eval_latency_ms_avg " in prom_body
     assert "executor_http_requests_total 3" in prom_body
-    assert "executor_http_request_errors_total 1" in prom_body
+    assert "executor_http_request_errors_total 2" in prom_body
     assert 'executor_http_requests_by_method_total{method="POST"} 3' in prom_body
-    assert 'executor_http_requests_by_status_total{status="200"} 2' in prom_body
-    assert 'executor_http_requests_by_status_total{status="403"} 1' in prom_body
+    assert 'executor_http_requests_by_status_total{status="200"} 1' in prom_body
+    assert 'executor_http_requests_by_status_total{status="403"} 2' in prom_body

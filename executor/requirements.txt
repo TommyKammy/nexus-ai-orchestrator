@@ -13,7 +13,6 @@ pytest-timeout==2.2.0
 # Type hints
 typing-extensions==4.9.0
 
-# Linting and formatting (development)
-black==24.3.0
+# Static analysis helpers (development)
 flake8==7.0.0
 mypy==1.8.0

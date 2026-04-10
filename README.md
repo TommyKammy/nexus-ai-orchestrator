@@ -61,6 +61,8 @@ At minimum configure these in `.env`:
 
 Reference: `.env.example`
 
+Policy enforcement defaults to `POLICY_MODE=enforce` and `POLICY_FAIL_MODE=closed`. Development-only advisory or fail-open overrides require explicit `POLICY_ALLOW_UNSAFE=true`.
+
 ## Common Commands
 
 ```bash

@@ -20,7 +20,21 @@
 ## Standard Release Cut
 
 1. Ensure `main` is green.
-2. Create and push release tag:
+2. Verify branch protection required checks before tagging:
+
+```bash
+bash scripts/ci/branch_protection_check_names_check.sh
+```
+
+Canonical `main` required checks:
+- `quality-gates`
+- `validate`
+- `import-test`
+- `policy-and-executor`
+- `security-audit`
+
+Safe update procedure for workflow/job renames: `docs/branch-protection-checks-runbook.md`
+3. Create and push release tag:
 
 ```bash
 git checkout main
@@ -29,8 +43,8 @@ git tag -a v1.0.0 -m "v1.0.0"
 git push origin v1.0.0
 ```
 
-3. Confirm GitHub Actions `Release` workflow succeeded.
-4. Confirm GitHub Release page contains generated notes artifact/body.
+4. Confirm GitHub Actions `Release` workflow succeeded.
+5. Confirm GitHub Release page contains generated notes artifact/body.
 
 ## Dry-run Procedure
 

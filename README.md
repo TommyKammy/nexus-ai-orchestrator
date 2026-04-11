@@ -84,6 +84,9 @@ pnpm e2e:compose-core
 
 # full regression entrypoint
 bash scripts/ci/regression.sh
+
+# branch protection required check drift detection
+bash scripts/ci/branch_protection_check_names_check.sh
 ```
 
 ## Kubernetes Path
@@ -123,6 +126,7 @@ K8s CI/load checks:
 - Threat model: `docs/security-threat-model-v1.md`
 - Security audit report: `docs/reports/security-audit-report-20260305.md`
 - Rollback/DR runbook: `docs/rollback-dr-runbook.md`
+- Branch protection required checks runbook: `docs/branch-protection-checks-runbook.md`
 - DR drill evidence: `docs/reports/dr-drill-20260305.md`
 - Production readiness checklist: `docs/production-readiness-checklist.md`
 - Production sign-off record: `docs/reports/production-readiness-signoff-20260305.md`

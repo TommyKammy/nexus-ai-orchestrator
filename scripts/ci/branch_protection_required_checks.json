@@ -1,0 +1,9 @@
+{
+  "main": [
+    "quality-gates",
+    "validate",
+    "import-test",
+    "policy-and-executor",
+    "security-audit"
+  ]
+}

@@ -175,8 +175,10 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "INSERT INTO memory_facts (subject, predicate, object, confidence)\nVALUES {{ $input.all()[0].json.facts.map(f => `('${f.subject.replace(/'/g, \"''\")}', '${f.predicate.replace(/'/g, \"''\")}', '${f.object.replace(/'/g, \"''\")}', ${f.confidence})`).join(',') }};",
-        "additionalFields": {}
+        "query": "INSERT INTO memory_facts (subject, predicate, object, confidence)\nSELECT fact.subject, fact.predicate, fact.object, fact.confidence\nFROM unnest($1::text[], $2::text[], $3::text[], $4::double precision[]) AS fact(subject, predicate, object, confidence);",
+        "additionalFields": {
+          "queryReplacement": "={{ [\n  ($input.first().json.facts || []).map(f => String(f.subject || '')),\n  ($input.first().json.facts || []).map(f => String(f.predicate || '')),\n  ($input.first().json.facts || []).map(f => String(f.object || '')),\n  ($input.first().json.facts || []).map(f => Number.isFinite(Number(f.confidence)) ? Number(f.confidence) : 0)\n] }}"
+        }
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
@@ -242,8 +244,10 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "INSERT INTO memory_vectors (tenant_id, scope, content, embedding, content_hash, created_at)\nVALUES ('{{ $input.first().json.tenant_id }}', '{{ $input.first().json.scope }}', '{{ $input.first().json.text.replace(/'/g, \"''\") }}', '{{ $input.first().json.embedding }}'::vector, '{{ $input.first().json.content_hash }}', NOW());",
-        "additionalFields": {}
+        "query": "INSERT INTO memory_vectors (tenant_id, scope, content, embedding, content_hash, created_at)\nVALUES ($1, $2, $3, $4::vector, $5, NOW());",
+        "additionalFields": {
+          "queryReplacement": "={{ [\n  $input.first().json.tenant_id,\n  $input.first().json.scope,\n  $input.first().json.text,\n  $input.first().json.embedding,\n  $input.first().json.content_hash\n] }}"
+        }
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
@@ -262,8 +266,10 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "INSERT INTO audit_events (actor, action, target, decision, created_at)\nVALUES ('workflow:memory_ingest', 'memory_write', '{{ $input.first().json.scope }}', 'allowed', NOW());",
-        "additionalFields": {}
+        "query": "INSERT INTO audit_events (actor, action, target, decision, created_at)\nVALUES ($1, $2, $3, $4, NOW());",
+        "additionalFields": {
+          "queryReplacement": "={{ [\n  'workflow:memory_ingest',\n  'memory_write',\n  $input.first().json.scope,\n  'allowed'\n] }}"
+        }
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,

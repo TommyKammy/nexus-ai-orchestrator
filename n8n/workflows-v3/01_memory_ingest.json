@@ -154,8 +154,10 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "INSERT INTO memory_facts (subject, predicate, object, confidence)\nVALUES {{ $input.all()[0].json.facts.map(f => `('${f.subject.replace(/'/g, \"''\")}', '${f.predicate.replace(/'/g, \"''\")}', '${f.object.replace(/'/g, \"''\")}', ${f.confidence})`).join(',') }};",
-        "additionalFields": {}
+        "query": "INSERT INTO memory_facts (subject, predicate, object, confidence)\nSELECT fact.subject, fact.predicate, fact.object, fact.confidence\nFROM unnest($1::text[], $2::text[], $3::text[], $4::double precision[]) AS fact(subject, predicate, object, confidence);",
+        "additionalFields": {
+          "queryReplacement": "={{ [\n  ($input.first().json.facts || []).map(f => String(f.subject || '')),\n  ($input.first().json.facts || []).map(f => String(f.predicate || '')),\n  ($input.first().json.facts || []).map(f => String(f.object || '')),\n  ($input.first().json.facts || []).map(f => Number.isFinite(Number(f.confidence)) ? Number(f.confidence) : 0)\n] }}"
+        }
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
@@ -250,8 +252,10 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "INSERT INTO audit_events (actor, action, target, decision, payload_jsonb, created_at)\nVALUES ('workflow:memory_ingest', 'memory_write', '{{ $input.first().json.scope }}', '{{ $input.first().json.policy.decision || \"allowed\" }}', '{{ JSON.stringify({ request_id: $input.first().json.request_id || \"\", policy: $input.first().json.policy || {} }).replace(/'/g, \"''\") }}'::jsonb, NOW());",
-        "additionalFields": {}
+        "query": "INSERT INTO audit_events (actor, action, target, decision, payload_jsonb, created_at)\nVALUES ($1, $2, $3, $4, $5::jsonb, NOW());",
+        "additionalFields": {
+          "queryReplacement": "={{ [\n  'workflow:memory_ingest',\n  'memory_write',\n  $input.first().json.scope,\n  $input.first().json.policy?.decision || 'allow',\n  JSON.stringify({\n    request_id: $input.first().json.request_id || '',\n    policy: $input.first().json.policy || {}\n  })\n] }}"
+        }
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,

@@ -91,9 +91,9 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH payload AS ( SELECT COALESCE(jsonb_agg(jsonb_build_object('workflow_id', workflow_id,'task_type', task_type,'tenant_id', tenant_id,'scope_pattern', scope_pattern,'constraints', constraints_jsonb,'enabled', enabled)), '[]'::jsonb) AS workflows FROM policy_workflows ) INSERT INTO policy_revisions (revision_id, status, payload_jsonb, notes, author, is_active, published_at) SELECT $1, 'published', jsonb_build_object('workflows', payload.workflows), $2, $3, true, NOW() FROM payload ON CONFLICT (revision_id) DO UPDATE SET status='published', payload_jsonb=EXCLUDED.payload_jsonb, notes=EXCLUDED.notes, author=EXCLUDED.author, is_active=true, published_at=NOW(); UPDATE policy_revisions SET is_active=false WHERE revision_id <> $1;",
+        "query": "WITH payload AS ( SELECT COALESCE(jsonb_agg(jsonb_build_object('workflow_id', workflow_id,'task_type', task_type,'tenant_id', tenant_id,'scope_pattern', scope_pattern,'constraints', constraints_jsonb,'enabled', enabled)), '[]'::jsonb) AS workflows FROM policy_workflows ), upserted AS ( INSERT INTO policy_revisions (revision_id, status, payload_jsonb, notes, author, is_active, published_at) SELECT $1, 'published', jsonb_build_object('workflows', payload.workflows), $2, $3, true, NOW() FROM payload ON CONFLICT (revision_id) DO UPDATE SET status='published', payload_jsonb=EXCLUDED.payload_jsonb, notes=EXCLUDED.notes, author=EXCLUDED.author, is_active=true, published_at=NOW() RETURNING revision_id ), deactivated AS ( UPDATE policy_revisions SET is_active=false WHERE revision_id <> $4 RETURNING revision_id ) SELECT upserted.revision_id, COALESCE((SELECT count(*) FROM deactivated), 0) AS deactivated_count FROM upserted;",
         "additionalFields": {
-          "queryReplacement": "={{ [\n  $json.revision_id,\n  $json.notes,\n  $json.actor\n] }}"
+          "queryReplacement": "={{ [\n  $json.revision_id,\n  $json.notes,\n  $json.actor,\n  $json.revision_id\n] }}"
         }
       },
       "type": "n8n-nodes-base.postgres",

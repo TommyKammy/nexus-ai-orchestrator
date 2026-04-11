@@ -6,10 +6,20 @@ require_parameterized_query() {
   local node_name="$2"
   shift 2
 
+  local matched_nodes
+  local match_count
   local query
   local query_replacement
-  query="$(jq -r --arg node_name "$node_name" '.nodes[] | select(.name == $node_name) | .parameters.query' "$workflow_path")"
-  query_replacement="$(jq -r --arg node_name "$node_name" '.nodes[] | select(.name == $node_name) | .parameters.additionalFields.queryReplacement' "$workflow_path")"
+  matched_nodes="$(jq -c --arg node_name "$node_name" '[.nodes[] | select(.name == $node_name)]' "$workflow_path")"
+  match_count="$(jq -r 'length' <<<"$matched_nodes")"
+
+  if [[ "$match_count" -ne 1 ]]; then
+    echo "Expected exactly 1 node named '${node_name}' in ${workflow_path}, found ${match_count}" >&2
+    exit 1
+  fi
+
+  query="$(jq -r '.[0].parameters.query' <<<"$matched_nodes")"
+  query_replacement="$(jq -r '.[0].parameters.additionalFields.queryReplacement' <<<"$matched_nodes")"
 
   if [[ -z "$query" || "$query" == "null" ]]; then
     echo "Query not found for '${node_name}' in ${workflow_path}" >&2
@@ -48,7 +58,7 @@ check_policy_registry_workflows() {
       require_parameterized_query "$workflow_path" "Insert Upsert Log" '$1' '$2::jsonb'
       ;;
     07_policy_registry_publish.json)
-      require_parameterized_query "$workflow_path" "Publish Revision" '$1' '$2' '$3' '$1'
+      require_parameterized_query "$workflow_path" "Publish Revision" '$1' '$2' '$3' '$4'
       require_parameterized_query "$workflow_path" "Insert Publish Log" '$1' '$2' '$3::jsonb'
       require_parameterized_query "$workflow_path" "Load Published Payload" '$1'
       ;;

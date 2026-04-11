@@ -1,7 +1,9 @@
 import importlib.util
 import json
+import shutil
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 
@@ -17,6 +19,7 @@ SPEC.loader.exec_module(branch_protection_check_names)
 class BranchProtectionCheckNamesTests(unittest.TestCase):
     def _write_fixture_repo(self) -> tuple[Path, Path, Path, list[Path]]:
         tmpdir = Path(tempfile.mkdtemp(prefix="branch-protection-checks-"))
+        self.addCleanup(shutil.rmtree, tmpdir, ignore_errors=True)
         manifest_path = tmpdir / "branch_protection_required_checks.json"
         workflow_dir = tmpdir / "workflows"
         workflow_dir.mkdir()
@@ -104,6 +107,101 @@ class BranchProtectionCheckNamesTests(unittest.TestCase):
         )
 
         self.assertTrue(any("Quality Gates / quality-gates" in error for error in errors))
+
+    def test_default_docs_include_branch_protection_runbook(self):
+        self.assertIn(
+            branch_protection_check_names.REPO_ROOT / "docs" / "branch-protection-checks-runbook.md",
+            branch_protection_check_names.DEFAULT_DOCS,
+        )
+
+    def test_parse_workflow_jobs_handles_inline_comments_and_nonstandard_indentation(self):
+        _, _, workflow_dir, _ = self._write_fixture_repo()
+        workflow_path = workflow_dir / "commented-jobs.yml"
+        workflow_path.write_text(
+            "\n".join(
+                [
+                    "name: Test Workflow",
+                    "",
+                    "jobs: # important jobs section",
+                    "   test-job:",
+                    "     name: my-check # canonical name",
+                    "     runs-on: ubuntu-latest",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        jobs = branch_protection_check_names.parse_workflow_jobs(workflow_path)
+
+        self.assertEqual(jobs, [("test-job", "my-check")])
+
+    def test_read_workflow_name_ignores_inline_comments(self):
+        _, _, workflow_dir, _ = self._write_fixture_repo()
+        workflow_path = workflow_dir / "workflow-name-comment.yml"
+        workflow_path.write_text(
+            "\n".join(
+                [
+                    'name: "Test Workflow # canonical" # actual inline comment',
+                    "",
+                    "jobs:",
+                    "  test-job:",
+                    "    runs-on: ubuntu-latest",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        workflow_name = branch_protection_check_names.read_workflow_name(workflow_path)
+
+        self.assertEqual(workflow_name, "Test Workflow # canonical")
+
+    def test_parse_workflow_jobs_ignores_nested_step_and_with_names(self):
+        _, _, workflow_dir, _ = self._write_fixture_repo()
+        workflow_path = workflow_dir / "nested-step-names.yml"
+        workflow_path.write_text(
+            "\n".join(
+                [
+                    "name: Security Audit",
+                    "",
+                    "jobs:",
+                    "  security-audit:",
+                    "    runs-on: ubuntu-latest",
+                    "    steps:",
+                    "      - name: Upload security artifacts",
+                    "        uses: actions/upload-artifact@v4",
+                    "        with:",
+                    "          name: security-scan-artifacts",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        jobs = branch_protection_check_names.parse_workflow_jobs(workflow_path)
+
+        self.assertEqual(jobs, [("security-audit", "security-audit")])
+
+    def test_legacy_doc_aliases_use_last_colon_for_windows_style_paths(self):
+        produced_checks = {
+            "validate": [r"C:\repo\.github\workflows\validate-workflows.yml:validate"],
+        }
+
+        with mock.patch.object(
+            branch_protection_check_names,
+            "read_workflow_name",
+            return_value="Validate workflows",
+        ) as read_workflow_name:
+            aliases = branch_protection_check_names.legacy_doc_aliases_for_required_checks(
+                required_checks=["validate"],
+                produced_checks=produced_checks,
+            )
+
+        self.assertEqual(aliases, ["Validate workflows / validate"])
+        read_workflow_name.assert_called_once_with(
+            Path(r"C:\repo\.github\workflows\validate-workflows.yml")
+        )
 
 
 if __name__ == "__main__":

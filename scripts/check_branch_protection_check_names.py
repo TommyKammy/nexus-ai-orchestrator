@@ -19,10 +19,10 @@ DEFAULT_MANIFEST = REPO_ROOT / "scripts" / "ci" / "branch_protection_required_ch
 DEFAULT_WORKFLOW_DIR = REPO_ROOT / ".github" / "workflows"
 DEFAULT_DOCS = [
     REPO_ROOT / "docs" / "production-readiness-checklist.md",
+    REPO_ROOT / "docs" / "branch-protection-checks-runbook.md",
     REPO_ROOT / "docs" / "release-process.md",
 ]
-JOB_KEY_RE = re.compile(r"^  ([A-Za-z0-9_-]+):\s*$")
-JOB_NAME_RE = re.compile(r"^    name:\s*(.+?)\s*$")
+JOB_KEY_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 def load_required_checks(manifest_path: Path, branch: str) -> list[str]:
@@ -43,36 +43,105 @@ def load_required_checks(manifest_path: Path, branch: str) -> list[str]:
     return normalized
 
 
+def _leading_spaces(line: str) -> int:
+    return len(line) - len(line.lstrip(" "))
+
+
+def _strip_inline_comment(line: str) -> str:
+    in_single_quote = False
+    in_double_quote = False
+    stripped: list[str] = []
+
+    for idx, char in enumerate(line):
+        if char == "'" and not in_double_quote:
+            in_single_quote = not in_single_quote
+        elif char == '"' and not in_single_quote:
+            in_double_quote = not in_double_quote
+        elif char == "#" and not in_single_quote and not in_double_quote:
+            previous = line[idx - 1] if idx > 0 else ""
+            if idx == 0 or previous.isspace():
+                break
+        stripped.append(char)
+
+    return "".join(stripped).rstrip()
+
+
+def _parse_mapping_entry(line: str) -> tuple[str, str] | None:
+    if ":" not in line:
+        return None
+
+    key, value = line.split(":", 1)
+    key = key.strip()
+    if not key:
+        return None
+
+    return key, value.strip()
+
+
+def _normalize_scalar(value: str) -> str:
+    normalized = value.strip()
+    if len(normalized) >= 2 and normalized[0] == normalized[-1] and normalized[0] in {"'", '"'}:
+        return normalized[1:-1].strip()
+    return normalized
+
+
 def parse_workflow_jobs(workflow_path: Path) -> list[tuple[str, str]]:
     lines = workflow_path.read_text(encoding="utf-8").splitlines()
-    jobs_started = False
+    jobs_indent: int | None = None
+    job_indent: int | None = None
+    current_property_indent: int | None = None
     current_job_id: str | None = None
     current_job_name: str | None = None
     parsed_jobs: list[tuple[str, str]] = []
 
-    for line in lines:
-        if not jobs_started:
-            if line == "jobs:":
-                jobs_started = True
+    for raw_line in lines:
+        line = _strip_inline_comment(raw_line)
+        if not line.strip():
             continue
 
-        if line and not line.startswith(" "):
-            break
+        indent = _leading_spaces(line)
+        content = line[indent:]
 
-        job_key_match = JOB_KEY_RE.match(line)
-        if job_key_match:
+        if jobs_indent is None:
+            if indent == 0 and content == "jobs:":
+                jobs_indent = indent
+            continue
+
+        if indent <= jobs_indent:
             if current_job_id is not None:
                 parsed_jobs.append((current_job_id, current_job_name or current_job_id))
-            current_job_id = job_key_match.group(1)
-            current_job_name = None
+            break
+
+        if content.endswith(":"):
+            candidate_job_id = content[:-1].strip()
+            if JOB_KEY_RE.fullmatch(candidate_job_id) and (job_indent is None or indent == job_indent):
+                if current_job_id is not None:
+                    parsed_jobs.append((current_job_id, current_job_name or current_job_id))
+                current_job_id = candidate_job_id
+                current_job_name = None
+                current_property_indent = None
+                job_indent = indent
+                continue
+
+        if current_job_id is None or job_indent is None or indent <= job_indent:
             continue
 
-        if current_job_id is None:
+        if content.startswith("-"):
             continue
 
-        job_name_match = JOB_NAME_RE.match(line)
-        if job_name_match and current_job_name is None:
-            current_job_name = job_name_match.group(1).strip().strip("\"'")
+        if current_property_indent is None:
+            current_property_indent = indent
+
+        if indent != current_property_indent:
+            continue
+
+        parsed_entry = _parse_mapping_entry(content)
+        if parsed_entry is None:
+            continue
+
+        key, value = parsed_entry
+        if key == "name" and current_job_name is None:
+            current_job_name = _normalize_scalar(value)
 
     if current_job_id is not None:
         parsed_jobs.append((current_job_id, current_job_name or current_job_id))
@@ -114,7 +183,7 @@ def legacy_doc_aliases_for_required_checks(
         if not producers:
             continue
 
-        producer_path = producers[0].split(":", 1)[0]
+        producer_path = producers[0].rsplit(":", 1)[0]
         workflow_path = Path(producer_path)
         workflow_name = read_workflow_name(workflow_path)
         if workflow_name:
@@ -123,9 +192,21 @@ def legacy_doc_aliases_for_required_checks(
 
 
 def read_workflow_name(workflow_path: Path) -> str | None:
-    for line in workflow_path.read_text(encoding="utf-8").splitlines():
-        if line.startswith("name:"):
-            return line.split(":", 1)[1].strip().strip("\"'")
+    for raw_line in workflow_path.read_text(encoding="utf-8").splitlines():
+        line = _strip_inline_comment(raw_line)
+        if not line.strip():
+            continue
+
+        if _leading_spaces(line) != 0:
+            continue
+
+        parsed_entry = _parse_mapping_entry(line)
+        if parsed_entry is None:
+            continue
+
+        key, value = parsed_entry
+        if key == "name":
+            return _normalize_scalar(value)
     return None
 
 

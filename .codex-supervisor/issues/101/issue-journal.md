@@ -17,6 +17,7 @@
 - Added a focused policy registry SQL check, reproduced raw interpolation in `06_policy_registry_upsert.json`, then parameterized the dynamic policy registry and candidate seed Postgres queries with `queryReplacement`.
 - Updated workflow validation CI to run the new focused check and documented the no-raw-SQL-interpolation rule in `n8n/workflows/README.md`.
 - Focused verification passed: `bash scripts/ci/policy_registry_workflow_check.sh`, `bash scripts/ci/audit_append_workflow_check.sh`, `bash scripts/ci/vector_search_workflow_check.sh`, and `bash scripts/ci/workflow_schema_check.sh`.
+- Commit `7eff8bf76082c8f18b4569ff5ac748f0af08646f` pushed to `origin/codex/issue-101`; draft PR opened as `#107`.
 
 ## Active Failure Context
 - None recorded.
@@ -26,10 +27,10 @@
 - Hypothesis: Policy registry mutation and lookup workflows are still vulnerable because they build SQL with template interpolation instead of Postgres placeholders and `queryReplacement`.
 - What changed: Added `scripts/ci/policy_registry_workflow_check.sh`; wired it into `.github/workflows/validate-workflows.yml`; parameterized dynamic SQL in `06_policy_registry_upsert.json`, `07_policy_registry_publish.json`, `09_policy_registry_get.json`, `11_policy_candidate_seed.json`, and `12_policy_registry_delete.json`; documented the workflow authoring rule in `n8n/workflows/README.md`.
 - Current blocker: none.
-- Next exact step: Commit the hardened workflows on `codex/issue-101`, then open or update a draft PR if no PR exists yet.
+- Next exact step: Monitor PR `#107` checks and address any review or CI follow-ups.
 - Verification gap: Did not run `scripts/ci/n8n_import_test.sh` or the full compose journey; focused workflow checks and schema validation only.
 - Files touched: `.github/workflows/validate-workflows.yml`, `scripts/ci/policy_registry_workflow_check.sh`, `n8n/workflows-v3/06_policy_registry_upsert.json`, `n8n/workflows-v3/07_policy_registry_publish.json`, `n8n/workflows-v3/09_policy_registry_get.json`, `n8n/workflows-v3/11_policy_candidate_seed.json`, `n8n/workflows-v3/12_policy_registry_delete.json`, `n8n/workflows/README.md`.
 - Rollback concern: Low; changes are limited to Postgres node query strings and `queryReplacement` payload bindings for the affected workflows.
-- Last focused command: `bash scripts/ci/workflow_schema_check.sh`
+- Last focused command: `gh pr create --draft --base main --head codex/issue-101 --title "Parameterize workflow SQL in policy registry flows" --body-file -`
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.

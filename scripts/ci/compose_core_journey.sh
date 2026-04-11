@@ -153,6 +153,14 @@ cat >"${TMP_DIR}/patch_01.jq" <<'JQ'
     }
     | del(.credentials)
   )
+| (.nodes[] | select(.name=="Check Policy")) |= (
+    .type = "n8n-nodes-base.code"
+    | .typeVersion = 1
+    | .parameters = {
+      "jsCode": "const validated = $('Check Validation').first().json; return [{ json: { ...validated, policy: { allow: true, decision: 'allow', policy_id: 'ci-core-journey', policy_version: 'ci', reasons: [], requires_approval: false, risk_score: 0 } } }];"
+    }
+    | del(.credentials)
+  )
 | (.connections["Check Validation"].main[0]) = [{"node":"Evaluate Policy","type":"main","index":0}]
 | (.connections["Check Policy"].main[0]) = [{"node":"Insert Facts","type":"main","index":0}]
 | (.nodes[] | select(.name=="Validate and Filter") | .parameters.jsCode) = "const input = $input.first().json.body || {}; const tenantId = String(input.tenant_id || '').trim(); const scope = String(input.scope || '').trim(); const text = String(input.text || '').trim(); const facts = Array.isArray(input.facts) ? input.facts : []; const tags = Array.isArray(input.tags) ? input.tags : []; const source = String(input.source || 'unknown'); if (!tenantId || !scope || !text) { return [{ json: { error: 'Missing required fields: tenant_id, scope, text' } }]; } return [{ json: { tenant_id: tenantId, scope, text, facts: facts.map((f)=>({subject:String(f.subject||'').trim(),predicate:String(f.predicate||'').trim(),object:String(f.object||'').trim(),confidence:Number.isFinite(Number(f.confidence))?Number(f.confidence):1})).filter((f)=>f.subject&&f.predicate&&f.object), tags, source, content_hash: null, request_id: null } }];"
@@ -179,6 +187,14 @@ cat >"${TMP_DIR}/patch_02.jq" <<'JQ'
     }
     | del(.credentials)
   )
+| (.nodes[] | select(.name=="Check Policy")) |= (
+    .type = "n8n-nodes-base.code"
+    | .typeVersion = 1
+    | .parameters = {
+      "jsCode": "const validated = $('Check Validation').first().json; return [{ json: { ...validated, policy: { allow: true, decision: 'allow', policy_id: 'ci-core-journey', policy_version: 'ci', reasons: [], requires_approval: false, risk_score: 0 } } }];"
+    }
+    | del(.credentials)
+  )
 | (.nodes[] | select(.name=="Generate Query Embedding")) |= (
     .type = "n8n-nodes-base.code"
     | .typeVersion = 1
@@ -194,6 +210,22 @@ JQ
 cat >"${TMP_DIR}/patch_04.jq" <<'JQ'
 (.name) = $name
 | (.nodes[] | select(.name=="Webhook") | .parameters.path) = $path
+| (.nodes[] | select(.name=="Evaluate Policy")) |= (
+    .type = "n8n-nodes-base.code"
+    | .typeVersion = 1
+    | .parameters = {
+      "jsCode": "return [{ json: { result: { allow: true, decision: 'allow', policy_id: 'ci-core-journey', policy_version: 'ci', reasons: [], requires_approval: false, risk_score: 0 } } }];"
+    }
+    | del(.credentials)
+  )
+| (.nodes[] | select(.name=="Check Policy")) |= (
+    .type = "n8n-nodes-base.code"
+    | .typeVersion = 1
+    | .parameters = {
+      "jsCode": "const validated = $('Check Validation').first().json; return [{ json: { ...validated, policy: { allow: true, decision: 'allow', policy_id: 'ci-core-journey', policy_version: 'ci', reasons: [], requires_approval: false, risk_score: 0 } } }];"
+    }
+    | del(.credentials)
+  )
 | (.nodes[] | select(.type=="n8n-nodes-base.postgres" and .parameters.additionalFields.queryReplacement != null)) |= (.parameters.options = ((.parameters.options // {}) + {"queryReplacement": .parameters.additionalFields.queryReplacement}))
 JQ
 

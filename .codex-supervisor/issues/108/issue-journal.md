@@ -22,12 +22,12 @@
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: The CI guard only inspected `Insert Vector` in two workflows, so raw `{{ ... }}` interpolation in other memory-ingest Postgres nodes could ship undetected.
-- What changed: Added a focused regression test for the shell check, expanded `memory_ingest_workflow_check.sh` to inspect every Postgres node across the three covered memory-ingest workflows, and parameterized `Insert Facts` / `Insert Audit` in both main workflows plus `Insert Facts` / `Insert Vector` / `Insert Audit` in the cached workflow.
+- What changed: Added a focused regression test for the shell check, expanded `memory_ingest_workflow_check.sh` to inspect every Postgres node across the three covered memory-ingest workflows, parameterized `Insert Facts` / `Insert Audit` in both main workflows plus `Insert Facts` / `Insert Vector` / `Insert Audit` in the cached workflow, committed the result as `def7764`, pushed `codex/issue-108`, and opened draft PR #110.
 - Current blocker: none
-- Next exact step: Stage the workflow, script, test, and journal changes and create a checkpoint commit on `codex/issue-108`.
+- Next exact step: Monitor PR #110 checks and address any CI or review feedback if it appears.
 - Verification gap: Focused verification passed; broader lint/test suites have not been run in this turn.
 - Files touched: scripts/ci/memory_ingest_workflow_check.sh; tests/test_memory_ingest_workflow_check.py; n8n/workflows/01_memory_ingest.json; n8n/workflows-v3/01_memory_ingest.json; n8n/workflows/01_memory_ingest_v3_cached.json; .codex-supervisor/issues/108/issue-journal.md
 - Rollback concern: The `Insert Facts` rewrite now depends on Postgres `unnest` with aligned arrays from n8n `queryReplacement`, so a rollback should keep the script and workflow SQL in sync.
-- Last focused command: python3 -m unittest -q tests/test_memory_ingest_workflow_check.py && bash scripts/ci/memory_ingest_workflow_check.sh
+- Last focused command: gh pr create --draft --base main --head codex/issue-108 --title "Strengthen memory_ingest SQL interpolation guard" --body ...
 ### Scratchpad
 - Keep this section short. The supervisor may compact older notes automatically.

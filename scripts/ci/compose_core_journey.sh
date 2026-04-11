@@ -171,7 +171,14 @@ JQ
 cat >"${TMP_DIR}/patch_02.jq" <<'JQ'
 (.name) = $name
 | (.nodes[] | select(.name=="Webhook") | .parameters.path) = $path
-| (.connections["Check Validation"].main[0]) = [{"node":"Generate Query Embedding","type":"main","index":0}]
+| (.nodes[] | select(.name=="Evaluate Policy")) |= (
+    .type = "n8n-nodes-base.code"
+    | .typeVersion = 1
+    | .parameters = {
+      "jsCode": "return [{ json: { result: { allow: true, decision: 'allow', policy_id: 'ci-core-journey', policy_version: 'ci', reasons: [], requires_approval: false, risk_score: 0 } } }];"
+    }
+    | del(.credentials)
+  )
 | (.nodes[] | select(.name=="Generate Query Embedding")) |= (
     .type = "n8n-nodes-base.code"
     | .typeVersion = 1
@@ -180,7 +187,7 @@ cat >"${TMP_DIR}/patch_02.jq" <<'JQ'
     }
     | del(.credentials)
   )
-| (.nodes[] | select(.name=="Parse Embedding") | .parameters.jsCode) = "const original = $('Check Validation').first().json; const embedding = $input.first().json?.embedding?.values; if (!Array.isArray(embedding) || embedding.length === 0) { throw new Error('Invalid mocked embedding'); } return [{ json: { ...original, embedding: `[${embedding.join(',')}]` } }];"
+| (.nodes[] | select(.name=="Parse Embedding") | .parameters.jsCode) = "const original = $('Check Policy').first().json; const embedding = $input.first().json?.embedding?.values; if (!Array.isArray(embedding) || embedding.length === 0) { throw new Error('Invalid mocked embedding'); } return [{ json: { ...original, embedding: `[${embedding.join(',')}]` } }];"
 | (.nodes[] | select(.type=="n8n-nodes-base.postgres" and .parameters.additionalFields.queryReplacement != null)) |= (.parameters.options = ((.parameters.options // {}) + {"queryReplacement": .parameters.additionalFields.queryReplacement}))
 JQ
 

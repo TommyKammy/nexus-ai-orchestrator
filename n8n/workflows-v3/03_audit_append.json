@@ -102,14 +102,113 @@
     },
     {
       "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "validation-error",
+              "leftValue": "={{ $json.status === 'error' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        760,
+        200
+      ],
+      "name": "Validation Error?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://opa:8181/v1/data/ai/policy/result",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ input: { subject: { tenant_id: (($('Check Validation').first().json.payload || {}).tenant_id) || 'unknown', scope: (($('Check Validation').first().json.payload || {}).scope) || $('Check Validation').first().json.target || 'unknown', role: 'workflow' }, resource: { tenant_id: (($('Check Validation').first().json.payload || {}).tenant_id) || 'unknown', scope: (($('Check Validation').first().json.payload || {}).scope) || $('Check Validation').first().json.target || 'unknown', task_type: 'audit_append', audit_action: $('Check Validation').first().json.action || '', audit_target: $('Check Validation').first().json.target || '' }, action: 'audit.append', context: { request_id: $('Check Validation').first().json.request_id, payload_size: JSON.stringify($('Check Validation').first().json.payload || {}).length, decision: $('Check Validation').first().json.decision || '' } } }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "continueOnFail": true,
+      "position": [
+        850,
+        400
+      ],
+      "name": "Evaluate Policy"
+    },
+    {
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\n\nconst validated = $('Check Validation').first().json;\n\nif (validated.status === 'error') {\n  return [{ json: validated }];\n}\n\nconst response = $input.first().json;\nconst responseResult = (response && typeof response.result === 'object' && !Array.isArray(response.result))\n  ? response.result\n  : null;\nconst rootPolicy = (response && typeof response === 'object' && !Array.isArray(response) && (\n  typeof response.decision === 'string' ||\n  typeof response.allow === 'boolean' ||\n  typeof response.policy_id === 'string' ||\n  typeof response.policy_version === 'string'\n))\n  ? response\n  : null;\nconst candidatePolicy = responseResult || rootPolicy;\n\nconst fallbackPolicy = {\n  policy_id: 'fallback',\n  policy_version: 'fallback',\n  decision: 'deny',\n  allow: false,\n  requires_approval: true,\n  risk_score: 0,\n  reasons: ['invalid_policy_response']\n};\n\nconst policy = candidatePolicy || fallbackPolicy;\nconst decision = String(policy.decision || '').trim() || 'deny';\n\nconst buildApproval = () => {\n  if (decision !== 'requires_approval') {\n    return null;\n  }\n\n  const signingSecret = String($env.N8N_ENCRYPTION_KEY || '').trim();\n  if (!signingSecret) {\n    return null;\n  }\n\n  const signedEnvelope = {\n    request_id: validated.request_id || null,\n    policy: {\n      policy_id: String(policy.policy_id || '').trim() || null,\n      policy_version: String(policy.policy_version || '').trim() || null,\n      decision,\n      allow: Boolean(policy.allow),\n      requires_approval: true,\n      risk_score: Number.isFinite(Number(policy.risk_score))\n        ? Math.round(Number(policy.risk_score))\n        : null,\n      reasons: Array.isArray(policy.reasons)\n        ? policy.reasons.map((reason) => String(reason))\n        : []\n    },\n    approval: {\n      endpoint: '/webhook/policy/approval',\n      method: 'POST'\n    }\n  };\n\n  const serializedEnvelope = JSON.stringify(signedEnvelope);\n  const signature = crypto.createHmac('sha256', signingSecret).update(serializedEnvelope).digest('hex');\n\n  return {\n    ...signedEnvelope.approval,\n    token: `${Buffer.from(serializedEnvelope).toString('base64url')}.${signature}`\n  };\n};\n\nconst approval = buildApproval();\n\nif (decision !== 'allow') {\n  return [{\n    json: {\n      status: 'error',\n      message: decision === 'requires_approval' ? 'Policy requires approval' : 'Policy denied',\n      request_id: validated.request_id,\n      policy: {\n        ...policy,\n        decision\n      },\n      approval\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    ...validated,\n    policy: {\n      ...policy,\n      decision\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1050,
+        400
+      ],
+      "name": "Check Policy"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "policy-error",
+              "leftValue": "={{ $json.status === 'error' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        260
+      ],
+      "name": "Policy Error?"
+    },
+    {
+      "parameters": {
         "respondWith": "json",
-        "json": "={{ JSON.stringify({ status: \"error\", message: $input.first().json.message }) }}"
+        "responseBody": "={{ ({ status: 'error', message: $input.first().json.message, request_id: $input.first().json.request_id || null, policy: $input.first().json.policy || null, approval: $input.first().json.approval || null }) }}"
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
       "position": [
-        850,
-        200
+        1290,
+        180
       ],
       "name": "Error Response"
     },
@@ -118,13 +217,13 @@
         "operation": "executeQuery",
         "query": "INSERT INTO audit_events (\n  actor,\n  action,\n  target,\n  decision,\n  payload_jsonb,\n  request_id,\n  policy_id,\n  policy_version,\n  policy_reason,\n  risk_score,\n  created_at\n)\nVALUES (\n  $1,\n  $2,\n  $3,\n  $4,\n  $5::jsonb,\n  $6,\n  $7,\n  $8,\n  $9,\n  $10,\n  NOW()\n)\nRETURNING id, request_id, created_at;",
         "additionalFields": {
-          "queryReplacement": "={{ [\n  $input.first().json.actor,\n  $input.first().json.action,\n  $input.first().json.target,\n  $input.first().json.decision,\n  JSON.stringify($input.first().json.payload || {}),\n  $input.first().json.request_id,\n  $input.first().json.policy_id,\n  $input.first().json.policy_version,\n  $input.first().json.policy_reason,\n  $input.first().json.risk_score\n] }}"
+          "queryReplacement": "={{ [\n  $input.first().json.actor,\n  $input.first().json.action,\n  $input.first().json.target,\n  $input.first().json.decision,\n  JSON.stringify({\n    ...($input.first().json.payload || {}),\n    policy: $input.first().json.policy || {}\n  }),\n  $input.first().json.request_id,\n  $input.first().json.policy?.policy_id || $input.first().json.policy_id,\n  $input.first().json.policy?.policy_version || $input.first().json.policy_version,\n  Array.isArray($input.first().json.policy?.reasons)\n    ? $input.first().json.policy.reasons.join('; ')\n    : $input.first().json.policy_reason,\n  Number.isFinite(Number($input.first().json.policy?.risk_score))\n    ? Math.round(Number($input.first().json.policy.risk_score))\n    : $input.first().json.risk_score\n] }}"
         }
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
       "position": [
-        850,
+        1250,
         400
       ],
       "name": "Insert Audit",
@@ -138,7 +237,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "json": "={{ (() => {\n  const insertResult = $('Insert Audit').first().json;\n  const row = Array.isArray(insertResult) ? insertResult[0] : insertResult;\n  return JSON.stringify({\n    status: 'success',\n    message: 'Audit event recorded',\n    audit_event_id: row?.id || null,\n    request_id: row?.request_id || $('Validate Input').first().json.request_id || null,\n    created_at: row?.created_at || null,\n  });\n})() }}"
+        "json": "={{ (() => {\n  const insertResult = $('Insert Audit').first().json;\n  const row = Array.isArray(insertResult) ? insertResult[0] : insertResult;\n  return JSON.stringify({\n    status: 'success',\n    message: 'Audit event recorded',\n    audit_event_id: row?.id || null,\n    request_id: row?.request_id || $('Check Policy').first().json.request_id || null,\n    created_at: row?.created_at || null,\n    policy: $('Check Policy').first().json.policy || null,\n  });\n})() }}"
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
@@ -176,10 +275,63 @@
       "main": [
         [
           {
+            "node": "Validation Error?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validation Error?": {
+      "main": [
+        [
+          {
             "node": "Error Response",
             "type": "main",
             "index": 0
-          },
+          }
+        ],
+        [
+          {
+            "node": "Evaluate Policy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Policy": {
+      "main": [
+        [
+          {
+            "node": "Check Policy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Policy": {
+      "main": [
+        [
+          {
+            "node": "Policy Error?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Policy Error?": {
+      "main": [
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
           {
             "node": "Insert Audit",
             "type": "main",

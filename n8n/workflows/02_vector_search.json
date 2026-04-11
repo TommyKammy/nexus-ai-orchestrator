@@ -78,7 +78,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const input = $input.first().json.body || {};\n\nconst tenantId = String(input.tenant_id || '').trim();\nconst scope = String(input.scope || '').trim();\nconst query = String(input.query || '').trim();\nconst requestedK = Number(input.k);\nconst k = Number.isFinite(requestedK) && requestedK > 0\n  ? Math.max(1, Math.min(Math.floor(requestedK), 50))\n  : 5;\n\nif (!tenantId || !scope || !query) {\n  return [{\n    json: {\n      error: 'Missing required fields: tenant_id, scope, query'\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    tenant_id: tenantId,\n    scope,\n    query,\n    k\n  }\n}];"
+        "jsCode": "const input = $input.first().json.body || {};\n\nconst tenantId = String(input.tenant_id || '').trim();\nconst scope = String(input.scope || '').trim();\nconst query = String(input.query || '').trim();\nconst requestedK = Number(input.k);\nconst k = Number.isFinite(requestedK) && requestedK > 0\n  ? Math.max(1, Math.min(Math.floor(requestedK), 50))\n  : 5;\n\nif (!tenantId || !scope || !query) {\n  return [{\n    json: {\n      error: 'Missing required fields: tenant_id, scope, query'\n    }\n  }];\n}\n\nconst requestId = String(input.request_id || '').trim() || `req-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;\n\nreturn [{\n  json: {\n    tenant_id: tenantId,\n    scope,\n    query,\n    k,\n    request_id: requestId\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
@@ -102,14 +102,113 @@
     },
     {
       "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "validation-error",
+              "leftValue": "={{ $json.status === 'error' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        760,
+        200
+      ],
+      "name": "Validation Error?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://opa:8181/v1/data/ai/policy/result",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ input: { subject: { tenant_id: $('Check Validation').first().json.tenant_id || 'unknown', scope: $('Check Validation').first().json.scope || 'unknown', role: 'workflow' }, resource: { tenant_id: $('Check Validation').first().json.tenant_id || 'unknown', scope: $('Check Validation').first().json.scope || 'unknown', task_type: 'vector_search', query: $('Check Validation').first().json.query || '' }, action: 'memory.read', context: { request_id: $('Check Validation').first().json.request_id, payload_size: JSON.stringify({ query: $('Check Validation').first().json.query || '', k: $('Check Validation').first().json.k || 0 }).length, requested_k: Number($('Check Validation').first().json.k || 0) } } }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "continueOnFail": true,
+      "position": [
+        850,
+        400
+      ],
+      "name": "Evaluate Policy"
+    },
+    {
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\n\nconst validated = $('Check Validation').first().json;\n\nif (validated.status === 'error') {\n  return [{ json: validated }];\n}\n\nconst response = $input.first().json;\nconst responseResult = (response && typeof response.result === 'object' && !Array.isArray(response.result))\n  ? response.result\n  : null;\nconst rootPolicy = (response && typeof response === 'object' && !Array.isArray(response) && (\n  typeof response.decision === 'string' ||\n  typeof response.allow === 'boolean' ||\n  typeof response.policy_id === 'string' ||\n  typeof response.policy_version === 'string'\n))\n  ? response\n  : null;\nconst candidatePolicy = responseResult || rootPolicy;\n\nconst fallbackPolicy = {\n  policy_id: 'fallback',\n  policy_version: 'fallback',\n  decision: 'deny',\n  allow: false,\n  requires_approval: true,\n  risk_score: 0,\n  reasons: ['invalid_policy_response']\n};\n\nconst policy = candidatePolicy || fallbackPolicy;\nconst decision = String(policy.decision || '').trim() || 'deny';\n\nconst buildApproval = () => {\n  if (decision !== 'requires_approval') {\n    return null;\n  }\n\n  const signingSecret = String($env.N8N_ENCRYPTION_KEY || '').trim();\n  if (!signingSecret) {\n    return null;\n  }\n\n  const signedEnvelope = {\n    request_id: validated.request_id || null,\n    policy: {\n      policy_id: String(policy.policy_id || '').trim() || null,\n      policy_version: String(policy.policy_version || '').trim() || null,\n      decision,\n      allow: Boolean(policy.allow),\n      requires_approval: true,\n      risk_score: Number.isFinite(Number(policy.risk_score))\n        ? Math.round(Number(policy.risk_score))\n        : null,\n      reasons: Array.isArray(policy.reasons)\n        ? policy.reasons.map((reason) => String(reason))\n        : []\n    },\n    approval: {\n      endpoint: '/webhook/policy/approval',\n      method: 'POST'\n    }\n  };\n\n  const serializedEnvelope = JSON.stringify(signedEnvelope);\n  const signature = crypto.createHmac('sha256', signingSecret).update(serializedEnvelope).digest('hex');\n\n  return {\n    ...signedEnvelope.approval,\n    token: `${Buffer.from(serializedEnvelope).toString('base64url')}.${signature}`\n  };\n};\n\nconst approval = buildApproval();\n\nif (decision !== 'allow') {\n  return [{\n    json: {\n      status: 'error',\n      message: decision === 'requires_approval' ? 'Policy requires approval' : 'Policy denied',\n      request_id: validated.request_id,\n      policy: {\n        ...policy,\n        decision\n      },\n      approval\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    ...validated,\n    policy: {\n      ...policy,\n      decision\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1050,
+        400
+      ],
+      "name": "Check Policy"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "policy-error",
+              "leftValue": "={{ $json.status === 'error' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        260
+      ],
+      "name": "Policy Error?"
+    },
+    {
+      "parameters": {
         "respondWith": "json",
-        "json": "={{ JSON.stringify({ status: \"error\", message: $input.first().json.message }) }}"
+        "responseBody": "={{ ({ status: 'error', message: $input.first().json.message, request_id: $input.first().json.request_id || null, policy: $input.first().json.policy || null, approval: $input.first().json.approval || null }) }}"
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
       "position": [
-        850,
-        200
+        1290,
+        180
       ],
       "name": "Error Response"
     },
@@ -138,14 +237,14 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        850,
+        1250,
         400
       ],
       "name": "Generate Query Embedding"
     },
     {
       "parameters": {
-        "jsCode": "const fs = require('fs');\n\n// Load PCA model\nconst pca = JSON.parse(fs.readFileSync('/workspace/pca_model.json', 'utf8'));\n\nconst response = $input.first().json;\nconst embedding = response?.embedding?.values;\n\nif (!Array.isArray(embedding) || embedding.length === 0) {\n  throw new Error('Invalid embedding response from Gemini');\n}\n\n// PCA transformation\nconst mean = pca.mean;\nconst components = pca.components;\n\n// Center the embedding\nconst centered = embedding.map((v, i) => v - mean[i]);\n\n// Project onto principal components\nconst reduced = components.map(component =>\n  component.reduce((sum, weight, i) => sum + weight * centered[i], 0)\n);\n\nconst original = $('Check Validation').first().json;\n\nreturn [{\n  json: {\n    ...original,\n    embedding: `[${reduced.join(',')}]`\n  }\n}];"
+        "jsCode": "const fs = require('fs');\n\n// Load PCA model\nconst pca = JSON.parse(fs.readFileSync('/workspace/pca_model.json', 'utf8'));\n\nconst response = $input.first().json;\nconst embedding = response?.embedding?.values;\n\nif (!Array.isArray(embedding) || embedding.length === 0) {\n  throw new Error('Invalid embedding response from Gemini');\n}\n\n// PCA transformation\nconst mean = pca.mean;\nconst components = pca.components;\n\n// Center the embedding\nconst centered = embedding.map((v, i) => v - mean[i]);\n\n// Project onto principal components\nconst reduced = components.map(component =>\n  component.reduce((sum, weight, i) => sum + weight * centered[i], 0)\n);\n\nconst original = $('Check Policy').first().json;\n\nreturn [{\n  json: {\n    ...original,\n    embedding: `[${reduced.join(',')}]`\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
@@ -180,9 +279,9 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "INSERT INTO audit_events (actor, action, target, decision, created_at)\nVALUES ('workflow:vector_search', 'memory_read', $1, 'allowed', NOW());",
+        "query": "INSERT INTO audit_events (\n  actor,\n  action,\n  target,\n  decision,\n  payload_jsonb,\n  request_id,\n  policy_id,\n  policy_version,\n  policy_reason,\n  risk_score,\n  created_at\n)\nVALUES (\n  'workflow:vector_search',\n  'memory_read',\n  $1,\n  $2,\n  $3::jsonb,\n  $4,\n  $5,\n  $6,\n  $7,\n  $8,\n  NOW()\n);",
         "additionalFields": {
-          "queryReplacement": "={{ [$('Check Validation').first().json.scope] }}"
+          "queryReplacement": "={{ [\n  $('Check Policy').first().json.scope,\n  $('Check Policy').first().json.policy?.decision || 'allow',\n  JSON.stringify({\n    request_id: $('Check Policy').first().json.request_id || '',\n    query: $('Check Policy').first().json.query || '',\n    k: $('Check Policy').first().json.k || 0,\n    policy: $('Check Policy').first().json.policy || {}\n  }),\n  $('Check Policy').first().json.request_id || null,\n  $('Check Policy').first().json.policy?.policy_id || null,\n  $('Check Policy').first().json.policy?.policy_version || null,\n  Array.isArray($('Check Policy').first().json.policy?.reasons)\n    ? $('Check Policy').first().json.policy.reasons.join('; ')\n    : null,\n  Number.isFinite(Number($('Check Policy').first().json.policy?.risk_score))\n    ? Math.round(Number($('Check Policy').first().json.policy.risk_score))\n    : null\n] }}"
         }
       },
       "type": "n8n-nodes-base.postgres",
@@ -202,7 +301,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "jsCode": "const searchResults = $('Search Vectors').all().map((item) => item.json);\nconst original = $('Check Validation').first().json;\n\nconst rankedResults = searchResults.map((r, index) => {\n  const distance = Number(r.cosine_distance);\n  const similarity = Number.isFinite(distance)\n    ? Math.max(0, Math.min(1, 1 - distance))\n    : null;\n\n  return {\n    id: r.id,\n    rank: index + 1,\n    scope: r.scope,\n    content: r.content,\n    tags: r.tags,\n    source: r.source,\n    created_at: r.created_at,\n    cosine_distance: Number.isFinite(distance) ? distance : null,\n    similarity_score: similarity,\n  };\n});\n\nconst response = {\n  status: 'success',\n  mode: 'vector_cosine',\n  query: original.query,\n  tenant_id: original.tenant_id,\n  scope: original.scope,\n  k: original.k,\n  results_count: rankedResults.length,\n  results: rankedResults,\n  timestamp: new Date().toISOString()\n};\n\nreturn [{ json: response }];"
+        "jsCode": "const searchResults = $('Search Vectors').all().map((item) => item.json);\nconst original = $('Check Policy').first().json;\n\nconst rankedResults = searchResults.map((r, index) => {\n  const distance = Number(r.cosine_distance);\n  const similarity = Number.isFinite(distance)\n    ? Math.max(0, Math.min(1, 1 - distance))\n    : null;\n\n  return {\n    id: r.id,\n    rank: index + 1,\n    scope: r.scope,\n    content: r.content,\n    tags: r.tags,\n    source: r.source,\n    created_at: r.created_at,\n    cosine_distance: Number.isFinite(distance) ? distance : null,\n    similarity_score: similarity,\n  };\n});\n\nconst response = {\n  status: 'success',\n  mode: 'vector_cosine',\n  request_id: original.request_id,\n  query: original.query,\n  tenant_id: original.tenant_id,\n  scope: original.scope,\n  k: original.k,\n  policy: original.policy || null,\n  results_count: rankedResults.length,\n  results: rankedResults,\n  timestamp: new Date().toISOString()\n};\n\nreturn [{ json: response }];"
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
@@ -240,10 +339,63 @@
       "main": [
         [
           {
+            "node": "Validation Error?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validation Error?": {
+      "main": [
+        [
+          {
             "node": "Error Response",
             "type": "main",
             "index": 0
-          },
+          }
+        ],
+        [
+          {
+            "node": "Evaluate Policy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Policy": {
+      "main": [
+        [
+          {
+            "node": "Check Policy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Policy": {
+      "main": [
+        [
+          {
+            "node": "Policy Error?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Policy Error?": {
+      "main": [
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
           {
             "node": "Generate Query Embedding",
             "type": "main",
@@ -270,13 +422,7 @@
             "node": "Search Vectors",
             "type": "main",
             "index": 0
-          }
-        ]
-      ]
-    },
-    "Search Vectors": {
-      "main": [
-        [
+          },
           {
             "node": "Insert Audit",
             "type": "main",
@@ -285,7 +431,7 @@
         ]
       ]
     },
-    "Insert Audit": {
+    "Search Vectors": {
       "main": [
         [
           {

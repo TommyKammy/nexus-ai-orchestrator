@@ -78,7 +78,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const input = $input.first().json.body || {};\n\nif (!input.request_id || !input.decision || !input.approver) {\n  return [{ json: { status: 'error', message: 'Missing required fields: request_id, decision, approver' } }];\n}\n\nconst validDecisions = ['approved', 'rejected'];\nif (!validDecisions.includes(input.decision)) {\n  return [{ json: { status: 'error', message: 'decision must be approved or rejected' } }];\n}\n\nreturn [{\n  json: {\n    request_id: String(input.request_id),\n    decision: input.decision,\n    approver: String(input.approver),\n    comment: String(input.comment || ''),\n    approved_at: new Date().toISOString(),\n    policy_id: String(input.policy_id || 'unknown'),\n    policy_version: String(input.policy_version || 'unknown')\n  }\n}];"
+        "jsCode": "const crypto = require('crypto');\n\nconst input = $input.first().json.body || {};\n\nif (!input.request_id || !input.decision || !input.approver || !input.policy_id || !input.policy_version) {\n  return [{ json: { status: 'error', message: 'Missing required fields: request_id, decision, approver, policy_id, policy_version' } }];\n}\n\nconst validDecisions = ['approved', 'rejected'];\nif (!validDecisions.includes(input.decision)) {\n  return [{ json: { status: 'error', message: 'decision must be approved or rejected' } }];\n}\n\nconst priorPolicy = (input.policy && typeof input.policy === 'object' && !Array.isArray(input.policy))\n  ? input.policy\n  : null;\nconst approval = (input.approval && typeof input.approval === 'object' && !Array.isArray(input.approval))\n  ? input.approval\n  : null;\n\nif (!priorPolicy) {\n  return [{ json: { status: 'error', message: 'policy object from the prior requires_approval response is required' } }];\n}\n\nif (!approval || !approval.token) {\n  return [{ json: { status: 'error', message: 'approval.token from the prior policy response is required' } }];\n}\n\nconst signingSecret = String($env.N8N_ENCRYPTION_KEY || '').trim();\nif (!signingSecret) {\n  return [{ json: { status: 'error', message: 'approval verification secret is not configured' } }];\n}\n\nconst requestId = String(input.request_id).trim();\nconst policyId = String(input.policy_id).trim();\nconst policyVersion = String(input.policy_version).trim();\nconst decision = String(input.decision).trim();\nconst approver = String(input.approver).trim();\nconst endpoint = String(approval.endpoint || '').trim();\nconst method = String(approval.method || '').trim().toUpperCase();\nconst token = String(approval.token || '').trim();\n\nlet signedEnvelope;\ntry {\n  const [encodedPayload, providedSignature] = token.split('.');\n  if (!encodedPayload || !providedSignature) {\n    throw new Error('malformed');\n  }\n\n  const serializedPayload = Buffer.from(encodedPayload, 'base64url').toString('utf8');\n  const expectedSignature = crypto.createHmac('sha256', signingSecret).update(serializedPayload).digest('hex');\n  const providedBuffer = Buffer.from(providedSignature, 'hex');\n  const expectedBuffer = Buffer.from(expectedSignature, 'hex');\n\n  if (providedBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(providedBuffer, expectedBuffer)) {\n    throw new Error('signature_mismatch');\n  }\n\n  signedEnvelope = JSON.parse(serializedPayload);\n} catch (error) {\n  return [{ json: { status: 'error', message: 'approval.token is invalid' } }];\n}\n\nconst signedPolicy = (signedEnvelope.policy && typeof signedEnvelope.policy === 'object' && !Array.isArray(signedEnvelope.policy))\n  ? signedEnvelope.policy\n  : null;\nconst signedApproval = (signedEnvelope.approval && typeof signedEnvelope.approval === 'object' && !Array.isArray(signedEnvelope.approval))\n  ? signedEnvelope.approval\n  : null;\n\nif (!signedPolicy || !signedApproval) {\n  return [{ json: { status: 'error', message: 'approval.token is missing signed policy metadata' } }];\n}\n\nif (String(signedEnvelope.request_id || '').trim() !== requestId) {\n  return [{ json: { status: 'error', message: 'request_id must match the signed approval token' } }];\n}\n\nif (String(signedPolicy.decision || '').trim() !== 'requires_approval') {\n  return [{ json: { status: 'error', message: 'policy.decision must be requires_approval' } }];\n}\n\nif (String(signedPolicy.policy_id || '').trim() !== policyId || String(signedPolicy.policy_version || '').trim() !== policyVersion) {\n  return [{ json: { status: 'error', message: 'policy_id and policy_version must match the signed approval token' } }];\n}\n\nif (String(priorPolicy.policy_id || '').trim() !== policyId || String(priorPolicy.policy_version || '').trim() !== policyVersion || String(priorPolicy.decision || '').trim() !== 'requires_approval') {\n  return [{ json: { status: 'error', message: 'policy object must match the prior requires_approval response' } }];\n}\n\nif (endpoint !== String(signedApproval.endpoint || '').trim() || method !== String(signedApproval.method || '').trim().toUpperCase()) {\n  return [{ json: { status: 'error', message: 'approval metadata must match the signed approval token' } }];\n}\n\nif (endpoint !== '/webhook/policy/approval' || method !== 'POST') {\n  return [{ json: { status: 'error', message: 'approval metadata must come from the prior policy response' } }];\n}\n\nconst auditDecision = decision === 'approved' ? 'allowed' : 'denied';\nconst policyReason = Array.isArray(signedPolicy.reasons) ? signedPolicy.reasons.join('; ') : null;\nconst riskScore = Number.isFinite(Number(signedPolicy.risk_score)) ? Math.round(Number(signedPolicy.risk_score)) : null;\n\nreturn [{\n  json: {\n    request_id: requestId,\n    decision,\n    approver,\n    comment: String(input.comment || ''),\n    approved_at: new Date().toISOString(),\n    policy_id: policyId,\n    policy_version: policyVersion,\n    policy: {\n      ...signedPolicy,\n      decision: 'requires_approval'\n    },\n    approval: {\n      ...signedApproval,\n      token\n    },\n    auditDecision,\n    policy_reason: policyReason,\n    risk_score: riskScore\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
@@ -90,10 +90,28 @@
     },
     {
       "parameters": {
-        "jsCode": "const data = $input.first().json;\nif (data.status === 'error') {\n  return [{ json: data }];\n}\n\nconst auditDecision = data.decision === 'approved' ? 'allowed' : 'denied';\nreturn [{ json: { ...data, auditDecision } }];"
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "approval-error",
+              "leftValue": "={{ $json.status === 'error' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
       },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 1,
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
       "position": [
         700,
         300
@@ -103,7 +121,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "json": "={{ JSON.stringify({ status: \"error\", message: $input.first().json.message }) }}"
+        "responseBody": "={{ ({ status: 'error', message: $input.first().json.message, request_id: $input.first().json.request_id || null, policy: $input.first().json.policy || null, approval: $input.first().json.approval || null }) }}"
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
@@ -116,8 +134,10 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "INSERT INTO audit_events (actor, action, target, decision, payload_jsonb, created_at)\nVALUES ('approver:{{ $input.first().json.approver.replace(/'/g, \"''\") }}', 'policy_approval', '{{ $input.first().json.request_id.replace(/'/g, \"''\") }}', '{{ $input.first().json.auditDecision }}', '{{ JSON.stringify({ request_id: $input.first().json.request_id, policy_id: $input.first().json.policy_id, policy_version: $input.first().json.policy_version, comment: $input.first().json.comment, approved_at: $input.first().json.approved_at, decision: $input.first().json.decision }).replace(/'/g, \"''\") }}'::jsonb, NOW());",
-        "additionalFields": {}
+        "query": "INSERT INTO audit_events (\n  actor,\n  action,\n  target,\n  decision,\n  payload_jsonb,\n  request_id,\n  policy_id,\n  policy_version,\n  policy_reason,\n  risk_score,\n  created_at\n)\nVALUES (\n  $1,\n  'policy_approval',\n  $2,\n  $3,\n  $4::jsonb,\n  $5,\n  $6,\n  $7,\n  $8,\n  $9,\n  NOW()\n)\nRETURNING id, request_id, created_at;",
+        "additionalFields": {
+          "queryReplacement": "={{ [\n  'approver:' + $input.first().json.approver,\n  $input.first().json.request_id,\n  $input.first().json.auditDecision,\n  JSON.stringify({\n    request_id: $input.first().json.request_id,\n    policy_id: $input.first().json.policy_id,\n    policy_version: $input.first().json.policy_version,\n    comment: $input.first().json.comment,\n    approved_at: $input.first().json.approved_at,\n    decision: $input.first().json.decision,\n    policy: $input.first().json.policy || {},\n    approval: $input.first().json.approval || {}\n  }),\n  $input.first().json.request_id,\n  $input.first().json.policy_id,\n  $input.first().json.policy_version,\n  $input.first().json.policy_reason,\n  $input.first().json.risk_score\n] }}"
+        }
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
@@ -136,7 +156,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "json": "={{ JSON.stringify({ status: \"success\", request_id: $input.first().json.request_id, decision: $input.first().json.decision, approver: $input.first().json.approver }) }}"
+        "json": "={{ (() => {\n  const insertResult = $('Insert Approval Audit').first().json;\n  const row = Array.isArray(insertResult) ? insertResult[0] : insertResult;\n  const approvalResult = $('Validate Approval').first().json;\n  return JSON.stringify({\n    status: 'success',\n    request_id: row?.request_id || approvalResult.request_id,\n    decision: approvalResult.decision,\n    approver: approvalResult.approver,\n    audit_event_id: row?.id || null,\n    created_at: row?.created_at || null,\n    policy: approvalResult.policy || null,\n  });\n})() }}"
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
@@ -177,7 +197,9 @@
             "node": "Error Response",
             "type": "main",
             "index": 0
-          },
+          }
+        ],
+        [
           {
             "node": "Insert Approval Audit",
             "type": "main",

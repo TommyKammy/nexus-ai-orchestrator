@@ -39,13 +39,13 @@ Failure signature: PRRT_kwDORd-8zc56Tc8G|PRRT_kwDORd-8zc56Tc8K|PRRT_kwDORd-8zc56
 ## Codex Working Notes
 ### Current Handoff
 - Hypothesis: The CI guard only inspected `Insert Vector` in two workflows, so raw `{{ ... }}` interpolation in other memory-ingest Postgres nodes could ship undetected.
-- What changed: Applied the current PR review fixes on top of `def7764`: hardened all three `Insert Facts` confidence arrays against `NaN`, changed the v3 audit fallback token from `allowed` to `allow`, tightened the CI `Insert Vector` contract to require an actual `.json.content_hash` bind, and extended the focused regression test to prove the stricter failure mode.
+- What changed: Applied the current PR review fixes on top of `def7764`, committed them as `c1ff3de`, and pushed `codex/issue-108`: hardened all three `Insert Facts` confidence arrays against `NaN`, changed the v3 audit fallback token from `allowed` to `allow`, tightened the CI `Insert Vector` contract to require an actual `.json.content_hash` bind, and extended the focused regression test to prove the stricter failure mode.
 - Current blocker: none
-- Next exact step: Commit these review fixes on `codex/issue-108`, then push the branch and refresh PR #110 for another review/CI pass.
+- Next exact step: Monitor PR #110 for updated CI and review state after `c1ff3de`, then address any remaining actionable threads if they appear.
 - Verification gap: Focused verification passed again; broader lint/test suites have still not been run in this turn.
 - Files touched: scripts/ci/memory_ingest_workflow_check.sh; tests/test_memory_ingest_workflow_check.py; n8n/workflows/01_memory_ingest.json; n8n/workflows-v3/01_memory_ingest.json; n8n/workflows/01_memory_ingest_v3_cached.json; .codex-supervisor/issues/108/issue-journal.md
 - Rollback concern: The `Insert Facts` rewrite now depends on Postgres `unnest` with aligned arrays from n8n `queryReplacement`, so a rollback should keep the script and workflow SQL in sync.
-- Last focused command: `bash scripts/ci/memory_ingest_workflow_check.sh`
+- Last focused command: `git push origin codex/issue-108`
 ### Scratchpad
 - Local review triage: the stale issue-journal status comment is already obsolete in the live file; the actionable local fixes were PRRT_kwDORd-8zc56Tc8K, PRRT_kwDORd-8zc56Tc8N, PRRT_kwDORd-8zc56Tc8O, PRRT_kwDORd-8zc56Tc8P, and PRRT_kwDORd-8zc56Tc8R.
 - Commands run this turn: `python3 -m unittest -q tests/test_memory_ingest_workflow_check.py`; `bash scripts/ci/memory_ingest_workflow_check.sh`.

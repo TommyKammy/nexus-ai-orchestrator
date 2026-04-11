@@ -1,6 +1,190 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Parse the stored n8n expression statically so the gate can validate binding counts without executing workflow code.
+count_n8n_query_replacement_bindings() {
+  local query_replacement="$1"
+  local node_name="$2"
+  local workflow_path="$3"
+
+  awk -v node_name="$node_name" -v workflow_path="$workflow_path" '
+    function fail(reason) {
+      printf "%s for '\''%s'\'' in %s\n", reason, node_name, workflow_path > "/dev/stderr"
+      exit 1
+    }
+
+    {
+      expr = expr $0 "\n"
+    }
+
+    END {
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", expr)
+      if (expr ~ /^=\{\{/) {
+        sub(/^=\{\{[[:space:]]*/, "", expr)
+        sub(/[[:space:]]*\}\}$/, "", expr)
+      }
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", expr)
+
+      if (substr(expr, 1, 1) != "[") {
+        fail("queryReplacement must be an array expression")
+      }
+
+      count = 0
+      array_depth = 0
+      brace_depth = 0
+      paren_depth = 0
+      in_token = 0
+      in_single = 0
+      in_double = 0
+      in_template = 0
+      escape = 0
+
+      for (i = 1; i <= length(expr); i++) {
+        ch = substr(expr, i, 1)
+
+        if (escape) {
+          escape = 0
+          continue
+        }
+
+        if (in_single) {
+          if (ch == "\\") {
+            escape = 1
+          } else if (ch == "'\''") {
+            in_single = 0
+          }
+          continue
+        }
+
+        if (in_double) {
+          if (ch == "\\") {
+            escape = 1
+          } else if (ch == "\"") {
+            in_double = 0
+          }
+          continue
+        }
+
+        if (in_template) {
+          if (ch == "\\") {
+            escape = 1
+          } else if (ch == "`") {
+            in_template = 0
+          }
+          continue
+        }
+
+        if (ch == "'\''") {
+          in_single = 1
+          if (array_depth >= 1) {
+            in_token = 1
+          }
+          continue
+        }
+
+        if (ch == "\"") {
+          in_double = 1
+          if (array_depth >= 1) {
+            in_token = 1
+          }
+          continue
+        }
+
+        if (ch == "`") {
+          in_template = 1
+          if (array_depth >= 1) {
+            in_token = 1
+          }
+          continue
+        }
+
+        if (ch ~ /[[:space:]]/) {
+          continue
+        }
+
+        if (array_depth == 0) {
+          if (ch != "[") {
+            fail("queryReplacement must contain a single array expression")
+          }
+          array_depth = 1
+          continue
+        }
+
+        if (ch == "," && array_depth == 1 && brace_depth == 0 && paren_depth == 0) {
+          if (!in_token) {
+            fail("queryReplacement contains an empty binding slot")
+          }
+          count++
+          in_token = 0
+          continue
+        }
+
+        if (ch == "]" && array_depth == 1 && brace_depth == 0 && paren_depth == 0) {
+          if (in_token) {
+            count++
+            in_token = 0
+          }
+          array_depth = 0
+          continue
+        }
+
+        if (ch == "[") {
+          array_depth++
+          in_token = 1
+          continue
+        }
+
+        if (ch == "]") {
+          if (array_depth <= 1) {
+            fail("queryReplacement has an unexpected closing bracket")
+          }
+          array_depth--
+          continue
+        }
+
+        if (ch == "{") {
+          brace_depth++
+          in_token = 1
+          continue
+        }
+
+        if (ch == "}") {
+          if (brace_depth == 0) {
+            fail("queryReplacement has an unexpected closing brace")
+          }
+          brace_depth--
+          continue
+        }
+
+        if (ch == "(") {
+          paren_depth++
+          in_token = 1
+          continue
+        }
+
+        if (ch == ")") {
+          if (paren_depth == 0) {
+            fail("queryReplacement has an unexpected closing parenthesis")
+          }
+          paren_depth--
+          continue
+        }
+
+        in_token = 1
+      }
+
+      if (escape || in_single || in_double || in_template) {
+        fail("queryReplacement has an unterminated string literal")
+      }
+      if (array_depth != 0 || brace_depth != 0 || paren_depth != 0) {
+        fail("queryReplacement has unbalanced delimiters")
+      }
+
+      print count
+    }
+  ' <<<"$query_replacement"
+}
+
 require_parameterized_query() {
   local workflow_path="$1"
   local node_name="$2"
@@ -10,6 +194,8 @@ require_parameterized_query() {
   local match_count
   local query
   local query_replacement
+  local replacement_count
+  local max_placeholder
   matched_nodes="$(jq -c --arg node_name "$node_name" '[.nodes[] | select(.name == $node_name)]' "$workflow_path")"
   match_count="$(jq -r 'length' <<<"$matched_nodes")"
 
@@ -33,6 +219,14 @@ require_parameterized_query() {
 
   if [[ -z "$query_replacement" || "$query_replacement" == "null" ]]; then
     echo "Missing queryReplacement for '${node_name}' in ${workflow_path}" >&2
+    exit 1
+  fi
+
+  replacement_count="$(count_n8n_query_replacement_bindings "$query_replacement" "$node_name" "$workflow_path")"
+  max_placeholder="$(grep -oE '\$[0-9]+' <<<"$query" | tr -d '$' | sort -n | tail -1 || true)"
+
+  if [[ -n "$max_placeholder" && "$replacement_count" -lt "$max_placeholder" ]]; then
+    echo "queryReplacement provides ${replacement_count} binding(s), but '${node_name}' query references up to \$${max_placeholder} in ${workflow_path}" >&2
     exit 1
   fi
 

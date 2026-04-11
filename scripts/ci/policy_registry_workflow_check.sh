@@ -37,10 +37,27 @@ count_n8n_query_replacement_bindings() {
       in_single = 0
       in_double = 0
       in_template = 0
+      in_line_comment = 0
+      in_block_comment = 0
       escape = 0
 
       for (i = 1; i <= length(expr); i++) {
         ch = substr(expr, i, 1)
+
+        if (in_line_comment) {
+          if (ch == "\n") {
+            in_line_comment = 0
+          }
+          continue
+        }
+
+        if (in_block_comment) {
+          if (ch == "*" && i < length(expr) && substr(expr, i + 1, 1) == "/") {
+            in_block_comment = 0
+            i++
+          }
+          continue
+        }
 
         if (escape) {
           escape = 0
@@ -96,6 +113,20 @@ count_n8n_query_replacement_bindings() {
             in_token = 1
           }
           continue
+        }
+
+        if (ch == "/" && i < length(expr)) {
+          next_ch = substr(expr, i + 1, 1)
+          if (next_ch == "/") {
+            in_line_comment = 1
+            i++
+            continue
+          }
+          if (next_ch == "*") {
+            in_block_comment = 1
+            i++
+            continue
+          }
         }
 
         if (ch ~ /[[:space:]]/) {
@@ -175,6 +206,9 @@ count_n8n_query_replacement_bindings() {
 
       if (escape || in_single || in_double || in_template) {
         fail("queryReplacement has an unterminated string literal")
+      }
+      if (in_block_comment) {
+        fail("queryReplacement has an unterminated block comment")
       }
       if (array_depth != 0 || brace_depth != 0 || paren_depth != 0) {
         fail("queryReplacement has unbalanced delimiters")

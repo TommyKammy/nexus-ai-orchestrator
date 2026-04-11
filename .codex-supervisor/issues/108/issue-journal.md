@@ -18,11 +18,11 @@ Validated the two remaining CodeRabbit findings against head `996b396` and confi
 
 Extended [tests/test_memory_ingest_workflow_check.py](tests/test_memory_ingest_workflow_check.py) with regressions for both review threads: one proves a non-Postgres node named `Insert Vector` is ignored, and one proves a two-placeholder query with a one-item replacement array fails with the new binding-count error. Focused verification passed locally after the patch.
 
-Summary: Addressed the two remaining automated review threads by hardening the memory-ingest CI selector and bind-count validation.
-State hint: local_review_fix
+Summary: Addressed the two remaining automated review threads, committed the CI guard hardening as `ef1782a`, and pushed `codex/issue-108`.
+State hint: waiting_ci
 Blocked reason: none
 Tests: `python3 -m unittest -q tests/test_memory_ingest_workflow_check.py`; `bash scripts/ci/memory_ingest_workflow_check.sh`
-Next action: Commit and push the review-fix checkpoint on `codex/issue-108`, then monitor PR #110 for refreshed CI/review state.
+Next action: Monitor PR #110 on head `ef1782a` for refreshed CI/review state and address any follow-up if it appears.
 Failure signature: none
 
 ## Active Failure Context
@@ -38,11 +38,11 @@ Failure signature: none
 - Hypothesis: The remaining review risk was not just missing workflow coverage; the CI guard could also inspect the wrong `Insert Vector` node by name and allow under-bound `queryReplacement` arrays to pass.
 - What changed: Tightened `check_insert_vector_contract()` to select only `n8n-nodes-base.postgres` nodes named `Insert Vector`, added static bind counting for parameterized `queryReplacement` array expressions, and extended the focused unit tests to cover both the selector hardening and the missing-binding failure mode.
 - Current blocker: none
-- Next exact step: Push the current checkpoint and watch PR #110 for refreshed CI plus updated review-thread state.
+- Next exact step: Watch PR #110 for refreshed CI plus updated review-thread state after pushed head `ef1782a`.
 - Verification gap: Focused verification passed for the CI guard and its regression tests; broader repo-wide test/lint suites remain unrun in this turn.
 - Files touched: scripts/ci/memory_ingest_workflow_check.sh; tests/test_memory_ingest_workflow_check.py; .codex-supervisor/issues/108/issue-journal.md
 - Rollback concern: The `Insert Facts` rewrite now depends on Postgres `unnest` with aligned arrays from n8n `queryReplacement`, so a rollback should keep the script and workflow SQL in sync.
-- Last focused command: `bash scripts/ci/memory_ingest_workflow_check.sh`
+- Last focused command: `git push origin codex/issue-108`
 ### Scratchpad
 - Local review triage: the stale issue-journal status comment is already obsolete in the live file; the actionable local fixes were PRRT_kwDORd-8zc56Tc8K, PRRT_kwDORd-8zc56Tc8N, PRRT_kwDORd-8zc56Tc8O, PRRT_kwDORd-8zc56Tc8P, and PRRT_kwDORd-8zc56Tc8R.
 - Commands run this turn: `python3 -m unittest -q tests/test_memory_ingest_workflow_check.py`; `bash scripts/ci/memory_ingest_workflow_check.sh`; `git diff -- scripts/ci/memory_ingest_workflow_check.sh tests/test_memory_ingest_workflow_check.py`.

@@ -108,6 +108,37 @@ class BranchProtectionCheckNamesTests(unittest.TestCase):
 
         self.assertTrue(any("Quality Gates / quality-gates" in error for error in errors))
 
+    def test_validation_fails_for_renamed_workflow_aliases_in_docs(self):
+        _, manifest_path, workflow_dir, doc_paths = self._write_fixture_repo()
+        (workflow_dir / "validate-workflows.yml").write_text(
+            "\n".join(
+                [
+                    "name: Validate workflows",
+                    "",
+                    "jobs:",
+                    "  validate:",
+                    "    runs-on: ubuntu-latest",
+                    "  import-test:",
+                    "    runs-on: ubuntu-latest",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        doc_paths[0].write_text(
+            "Checks: `Old Validate Pipeline / validate`, `import-test`\n",
+            encoding="utf-8",
+        )
+
+        errors = branch_protection_check_names.validate_branch_protection_check_names(
+            manifest_path=manifest_path,
+            workflow_dir=workflow_dir,
+            branch="main",
+            doc_paths=doc_paths,
+        )
+
+        self.assertTrue(any("Old Validate Pipeline / validate" in error for error in errors))
+
     def test_default_docs_include_branch_protection_runbook(self):
         self.assertIn(
             branch_protection_check_names.REPO_ROOT / "docs" / "branch-protection-checks-runbook.md",
@@ -183,24 +214,34 @@ class BranchProtectionCheckNamesTests(unittest.TestCase):
 
         self.assertEqual(jobs, [("security-audit", "security-audit")])
 
-    def test_legacy_doc_aliases_use_last_colon_for_windows_style_paths(self):
+    def test_legacy_doc_aliases_include_all_producer_workflow_names(self):
         produced_checks = {
-            "validate": [r"C:\repo\.github\workflows\validate-workflows.yml:validate"],
+            "validate": [
+                r"C:\repo\.github\workflows\validate-workflows.yml:validate",
+                "/tmp/validate-v2.yml:validate",
+            ],
         }
 
         with mock.patch.object(
             branch_protection_check_names,
             "read_workflow_name",
-            return_value="Validate workflows",
+            side_effect=["Validate workflows", "Validate workflows v2"],
         ) as read_workflow_name:
             aliases = branch_protection_check_names.legacy_doc_aliases_for_required_checks(
                 required_checks=["validate"],
                 produced_checks=produced_checks,
             )
 
-        self.assertEqual(aliases, ["Validate workflows / validate"])
-        read_workflow_name.assert_called_once_with(
-            Path(r"C:\repo\.github\workflows\validate-workflows.yml")
+        self.assertEqual(
+            aliases,
+            ["Validate workflows / validate", "Validate workflows v2 / validate"],
+        )
+        self.assertEqual(
+            read_workflow_name.call_args_list,
+            [
+                mock.call(Path(r"C:\repo\.github\workflows\validate-workflows.yml")),
+                mock.call(Path("/tmp/validate-v2.yml")),
+            ],
         )
 
 

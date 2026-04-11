@@ -177,18 +177,15 @@ def collect_workflow_checks(workflow_dir: Path) -> tuple[dict[str, list[str]], l
 def legacy_doc_aliases_for_required_checks(
     required_checks: list[str], produced_checks: dict[str, list[str]]
 ) -> list[str]:
-    aliases: list[str] = []
+    aliases: set[str] = set()
     for check_name in required_checks:
-        producers = produced_checks.get(check_name, [])
-        if not producers:
-            continue
-
-        producer_path = producers[0].rsplit(":", 1)[0]
-        workflow_path = Path(producer_path)
-        workflow_name = read_workflow_name(workflow_path)
-        if workflow_name:
-            aliases.append(f"{workflow_name} / {check_name}")
-    return aliases
+        for producer in produced_checks.get(check_name, []):
+            producer_path = producer.rsplit(":", 1)[0]
+            workflow_path = Path(producer_path)
+            workflow_name = read_workflow_name(workflow_path)
+            if workflow_name:
+                aliases.add(f"{workflow_name} / {check_name}")
+    return sorted(aliases)
 
 
 def read_workflow_name(workflow_path: Path) -> str | None:
@@ -210,17 +207,27 @@ def read_workflow_name(workflow_path: Path) -> str | None:
     return None
 
 
-def validate_docs(doc_paths: list[Path], legacy_aliases: list[str]) -> list[str]:
+def _legacy_doc_alias_pattern(required_checks: list[str]) -> re.Pattern[str]:
+    check_names = sorted((re.escape(check_name) for check_name in required_checks), key=len, reverse=True)
+    alternation = "|".join(check_names)
+    return re.compile(
+        rf"(?:^|[\s([{{'\"`])(?P<alias>[^`\n/][^`\n/]*? / (?P<check>{alternation}))"
+        rf"(?=$|[\s)\]}}.,;:!?'\"`])"
+    )
+
+
+def validate_docs(doc_paths: list[Path], required_checks: list[str]) -> list[str]:
     errors: list[str] = []
+    legacy_alias_pattern = _legacy_doc_alias_pattern(required_checks)
 
     for doc_path in doc_paths:
         content = doc_path.read_text(encoding="utf-8")
-        for alias in legacy_aliases:
-            if alias in content:
-                errors.append(
-                    f"{doc_path}: replace legacy workflow/job display name '{alias}' "
-                    "with the exact reported check name"
-                )
+        legacy_aliases = {match.group("alias") for match in legacy_alias_pattern.finditer(content)}
+        for alias in sorted(legacy_aliases):
+            errors.append(
+                f"{doc_path}: replace legacy workflow/job display name '{alias}' "
+                "with the exact reported check name"
+            )
 
     return errors
 
@@ -247,13 +254,12 @@ def validate_branch_protection_check_names(
                 f"required check '{check_name}' for branch '{branch}' is not produced by any workflow job"
             )
 
-    legacy_aliases = legacy_doc_aliases_for_required_checks(required_checks, produced_checks)
     for doc_path in doc_paths:
         if not doc_path.exists():
             errors.append(f"{doc_path}: doc file not found")
 
     existing_docs = [doc_path for doc_path in doc_paths if doc_path.exists()]
-    errors.extend(validate_docs(existing_docs, legacy_aliases))
+    errors.extend(validate_docs(existing_docs, required_checks))
     return errors
 
 

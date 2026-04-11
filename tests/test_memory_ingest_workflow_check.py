@@ -442,6 +442,84 @@ class MemoryIngestWorkflowCheckTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
         self.assertIn("Memory ingest workflow metadata checks passed.", result.stdout)
 
+    def test_check_fails_when_cached_insert_vector_uses_legacy_insert_shape(self):
+        repo_root = self._make_temp_repo()
+        safe_vector_query = textwrap.dedent(
+            """
+            INSERT INTO memory_vectors (
+              tenant_id,
+              scope,
+              content,
+              embedding,
+              tags,
+              source,
+              content_hash,
+              metadata_jsonb,
+              created_at
+            )
+            VALUES (
+              $1,
+              $2,
+              $3,
+              $4::vector,
+              $5::jsonb,
+              $6,
+              $7,
+              $8::jsonb,
+              NOW()
+            )
+            ON CONFLICT (tenant_id, scope, content_hash)
+            WHERE content_hash IS NOT NULL
+            DO UPDATE SET
+              content = EXCLUDED.content,
+              embedding = EXCLUDED.embedding,
+              tags = EXCLUDED.tags,
+              source = EXCLUDED.source,
+              metadata_jsonb = EXCLUDED.metadata_jsonb
+            RETURNING id, content_hash;
+            """
+        ).strip()
+        safe_vector_replacement = "={{ ['tenant', 'scope', 'text', 'embedding', '[]', 'api', $input.first().json.content_hash, '{}'] }}"
+        legacy_cached_query = textwrap.dedent(
+            """
+            INSERT INTO memory_vectors (tenant_id, scope, content, embedding, content_hash, created_at)
+            VALUES ($1, $2, $3, $4::vector, $5, NOW());
+            """
+        ).strip()
+
+        self._write_workflow(
+            repo_root,
+            "n8n/workflows/01_memory_ingest.json",
+            [
+                self._postgres_node("Insert Vector", safe_vector_query, safe_vector_replacement),
+                self._postgres_node("Insert Audit", "SELECT 1;"),
+            ],
+        )
+        self._write_workflow(
+            repo_root,
+            "n8n/workflows-v3/01_memory_ingest.json",
+            [
+                self._postgres_node("Insert Vector", safe_vector_query, safe_vector_replacement),
+                self._postgres_node("Insert Audit", "SELECT 1;"),
+            ],
+        )
+        self._write_workflow(
+            repo_root,
+            "n8n/workflows/01_memory_ingest_v3_cached.json",
+            [
+                self._postgres_node("Insert Vector", legacy_cached_query, "={{ ['tenant', 'scope', 'text', 'embedding', $input.first().json.content_hash] }}"),
+                self._postgres_node("Insert Audit", "SELECT 1;"),
+            ],
+        )
+
+        result = self._run_check(repo_root)
+
+        self.assertNotEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+        self.assertIn(
+            "Insert Vector in n8n/workflows/01_memory_ingest_v3_cached.json is missing 'metadata_jsonb'",
+            result.stderr,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

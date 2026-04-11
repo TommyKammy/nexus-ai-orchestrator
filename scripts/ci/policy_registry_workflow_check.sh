@@ -219,6 +219,189 @@ count_n8n_query_replacement_bindings() {
   ' <<<"$query_replacement"
 }
 
+strip_sql_noncode() {
+  awk '
+    function emit_replacement(ch) {
+      if (ch == "\n") {
+        printf "\n"
+      } else {
+        printf " "
+      }
+    }
+
+    function consume_dollar_tag(text, start,    ch, i, tag) {
+      if (substr(text, start, 1) != "$") {
+        return ""
+      }
+
+      ch = substr(text, start + 1, 1)
+      if (ch == "$") {
+        return "$$"
+      }
+
+      if (ch !~ /[A-Za-z_]/) {
+        return ""
+      }
+
+      tag = "$" ch
+      for (i = start + 2; i <= length(text); i++) {
+        ch = substr(text, i, 1)
+        if (ch == "$") {
+          return tag "$"
+        }
+        if (ch !~ /[A-Za-z0-9_]/) {
+          return ""
+        }
+        tag = tag ch
+      }
+
+      return ""
+    }
+
+    {
+      sql = sql $0 "\n"
+    }
+
+    END {
+      state = "code"
+      block_depth = 0
+      dollar_tag = ""
+
+      for (i = 1; i <= length(sql); i++) {
+        ch = substr(sql, i, 1)
+        next_ch = (i < length(sql)) ? substr(sql, i + 1, 1) : ""
+
+        if (state == "line_comment") {
+          emit_replacement(ch)
+          if (ch == "\n") {
+            state = "code"
+          }
+          continue
+        }
+
+        if (state == "block_comment") {
+          if (ch == "/" && next_ch == "*") {
+            emit_replacement(ch)
+            emit_replacement(next_ch)
+            block_depth++
+            i++
+            continue
+          }
+
+          if (ch == "*" && next_ch == "/") {
+            emit_replacement(ch)
+            emit_replacement(next_ch)
+            block_depth--
+            i++
+            if (block_depth == 0) {
+              state = "code"
+            }
+            continue
+          }
+
+          emit_replacement(ch)
+          continue
+        }
+
+        if (state == "single_quote") {
+          if (ch == "'\''" && next_ch == "'\''") {
+            emit_replacement(ch)
+            emit_replacement(next_ch)
+            i++
+            continue
+          }
+
+          emit_replacement(ch)
+          if (ch == "'\''") {
+            state = "code"
+          }
+          continue
+        }
+
+        if (state == "double_quote") {
+          if (ch == "\"" && next_ch == "\"") {
+            emit_replacement(ch)
+            emit_replacement(next_ch)
+            i++
+            continue
+          }
+
+          emit_replacement(ch)
+          if (ch == "\"") {
+            state = "code"
+          }
+          continue
+        }
+
+        if (state == "dollar_quote") {
+          if (substr(sql, i, length(dollar_tag)) == dollar_tag) {
+            for (j = 1; j <= length(dollar_tag); j++) {
+              emit_replacement(substr(dollar_tag, j, 1))
+            }
+            i += length(dollar_tag) - 1
+            state = "code"
+            continue
+          }
+
+          emit_replacement(ch)
+          continue
+        }
+
+        if (ch == "-" && next_ch == "-") {
+          emit_replacement(ch)
+          emit_replacement(next_ch)
+          state = "line_comment"
+          i++
+          continue
+        }
+
+        if (ch == "/" && next_ch == "*") {
+          emit_replacement(ch)
+          emit_replacement(next_ch)
+          state = "block_comment"
+          block_depth = 1
+          i++
+          continue
+        }
+
+        if (ch == "'\''") {
+          emit_replacement(ch)
+          state = "single_quote"
+          continue
+        }
+
+        if (ch == "\"") {
+          emit_replacement(ch)
+          state = "double_quote"
+          continue
+        }
+
+        dollar_tag = consume_dollar_tag(sql, i)
+        if (dollar_tag != "") {
+          for (j = 1; j <= length(dollar_tag); j++) {
+            emit_replacement(substr(dollar_tag, j, 1))
+          }
+          i += length(dollar_tag) - 1
+          state = "dollar_quote"
+          continue
+        }
+
+        printf "%s", ch
+      }
+
+      if (state == "block_comment") {
+        print "SQL contains an unterminated block comment" > "/dev/stderr"
+        exit 1
+      }
+
+      if (state == "single_quote" || state == "double_quote" || state == "dollar_quote") {
+        print "SQL contains an unterminated quoted literal" > "/dev/stderr"
+        exit 1
+      }
+    }
+  '
+}
+
 require_parameterized_query() {
   local workflow_path="$1"
   local node_name="$2"
@@ -230,6 +413,7 @@ require_parameterized_query() {
   local query_replacement
   local replacement_count
   local max_placeholder
+  local normalized_query
   matched_nodes="$(jq -c --arg node_name "$node_name" '[.nodes[] | select(.name == $node_name)]' "$workflow_path")"
   match_count="$(jq -r 'length' <<<"$matched_nodes")"
 
@@ -257,7 +441,8 @@ require_parameterized_query() {
   fi
 
   replacement_count="$(count_n8n_query_replacement_bindings "$query_replacement" "$node_name" "$workflow_path")"
-  max_placeholder="$(grep -oE '\$[0-9]+' <<<"$query" | tr -d '$' | sort -n | tail -1 || true)"
+  normalized_query="$(strip_sql_noncode <<<"$query")"
+  max_placeholder="$(grep -oE '\$[0-9]+' <<<"$normalized_query" | tr -d '$' | sort -n | tail -1 || true)"
 
   if [[ -n "$max_placeholder" && "$replacement_count" -lt "$max_placeholder" ]]; then
     echo "queryReplacement provides ${replacement_count} binding(s), but '${node_name}' query references up to \$${max_placeholder} in ${workflow_path}" >&2
@@ -270,11 +455,11 @@ require_parameterized_query() {
       local placeholder_regex
       idx="${BASH_REMATCH[1]}"
       printf -v placeholder_regex '(^|[^0-9])\\$%s([^0-9]|$)' "$idx"
-      if ! grep -Eq "$placeholder_regex" <<<"$query"; then
+      if ! grep -Eq "$placeholder_regex" <<<"$normalized_query"; then
         echo "Missing '${pattern}' in '${node_name}' query for ${workflow_path}" >&2
         exit 1
       fi
-    elif ! grep -Fq -- "$pattern" <<<"$query"; then
+    elif ! grep -Fq -- "$pattern" <<<"$normalized_query"; then
       echo "Missing '${pattern}' in '${node_name}' query for ${workflow_path}" >&2
       exit 1
     fi

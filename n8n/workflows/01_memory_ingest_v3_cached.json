@@ -177,7 +177,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO memory_facts (subject, predicate, object, confidence)\nSELECT fact.subject, fact.predicate, fact.object, fact.confidence\nFROM unnest($1::text[], $2::text[], $3::text[], $4::double precision[]) AS fact(subject, predicate, object, confidence);",
         "additionalFields": {
-          "queryReplacement": "={{ [\n  ($input.first().json.facts || []).map(f => String(f.subject || '')),\n  ($input.first().json.facts || []).map(f => String(f.predicate || '')),\n  ($input.first().json.facts || []).map(f => String(f.object || '')),\n  ($input.first().json.facts || []).map(f => Number(f.confidence || 0))\n] }}"
+          "queryReplacement": "={{ [\n  ($input.first().json.facts || []).map(f => String(f.subject || '')),\n  ($input.first().json.facts || []).map(f => String(f.predicate || '')),\n  ($input.first().json.facts || []).map(f => String(f.object || '')),\n  ($input.first().json.facts || []).map(f => Number.isFinite(Number(f.confidence)) ? Number(f.confidence) : 0)\n] }}"
         }
       },
       "type": "n8n-nodes-base.postgres",

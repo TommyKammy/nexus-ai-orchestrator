@@ -156,7 +156,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO memory_facts (subject, predicate, object, confidence)\nSELECT fact.subject, fact.predicate, fact.object, fact.confidence\nFROM unnest($1::text[], $2::text[], $3::text[], $4::double precision[]) AS fact(subject, predicate, object, confidence);",
         "additionalFields": {
-          "queryReplacement": "={{ [\n  ($input.first().json.facts || []).map(f => String(f.subject || '')),\n  ($input.first().json.facts || []).map(f => String(f.predicate || '')),\n  ($input.first().json.facts || []).map(f => String(f.object || '')),\n  ($input.first().json.facts || []).map(f => Number(f.confidence || 0))\n] }}"
+          "queryReplacement": "={{ [\n  ($input.first().json.facts || []).map(f => String(f.subject || '')),\n  ($input.first().json.facts || []).map(f => String(f.predicate || '')),\n  ($input.first().json.facts || []).map(f => String(f.object || '')),\n  ($input.first().json.facts || []).map(f => Number.isFinite(Number(f.confidence)) ? Number(f.confidence) : 0)\n] }}"
         }
       },
       "type": "n8n-nodes-base.postgres",
@@ -254,7 +254,7 @@
         "operation": "executeQuery",
         "query": "INSERT INTO audit_events (actor, action, target, decision, payload_jsonb, created_at)\nVALUES ($1, $2, $3, $4, $5::jsonb, NOW());",
         "additionalFields": {
-          "queryReplacement": "={{ [\n  'workflow:memory_ingest',\n  'memory_write',\n  $input.first().json.scope,\n  $input.first().json.policy?.decision || 'allowed',\n  JSON.stringify({\n    request_id: $input.first().json.request_id || '',\n    policy: $input.first().json.policy || {}\n  })\n] }}"
+          "queryReplacement": "={{ [\n  'workflow:memory_ingest',\n  'memory_write',\n  $input.first().json.scope,\n  $input.first().json.policy?.decision || 'allow',\n  JSON.stringify({\n    request_id: $input.first().json.request_id || '',\n    policy: $input.first().json.policy || {}\n  })\n] }}"
         }
       },
       "type": "n8n-nodes-base.postgres",

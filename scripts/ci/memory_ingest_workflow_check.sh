@@ -62,7 +62,7 @@ check_insert_vector_contract() {
     fi
   done
 
-  if ! grep -Fq "content_hash" <<<"$query_replacement"; then
+  if ! grep -Fq '.json.content_hash' <<<"$query_replacement"; then
     die "Insert Vector queryReplacement in ${workflow_path} must preserve content_hash"
   fi
 }

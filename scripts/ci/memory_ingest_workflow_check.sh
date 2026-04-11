@@ -250,5 +250,6 @@ done
 
 check_insert_vector_contract "n8n/workflows/01_memory_ingest.json"
 check_insert_vector_contract "n8n/workflows-v3/01_memory_ingest.json"
+check_insert_vector_contract "n8n/workflows/01_memory_ingest_v3_cached.json"
 
 echo "Memory ingest workflow metadata checks passed."

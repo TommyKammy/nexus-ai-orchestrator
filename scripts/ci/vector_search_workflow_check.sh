@@ -37,6 +37,10 @@ check_workflow() {
   local validation_false_target
   local policy_true_target
   local policy_false_target
+  local continue_on_fail
+  local parse_to_search
+  local parse_to_audit
+  local search_to_audit
   local search_query
   local search_replacement
   local audit_query
@@ -52,10 +56,14 @@ check_workflow() {
 
   policy_url="$(jq -r '.nodes[] | select(.name == "Evaluate Policy") | .parameters.url' "$workflow_path")"
   check_policy_code="$(jq -r '.nodes[] | select(.name == "Check Policy") | .parameters.jsCode' "$workflow_path")"
+  continue_on_fail="$(jq -r '.nodes[] | select(.name == "Evaluate Policy") | (.continueOnFail // false)' "$workflow_path")"
   validation_true_target="$(jq -r '.connections["Validation Error?"].main[0][0].node // empty' "$workflow_path")"
   validation_false_target="$(jq -r '.connections["Validation Error?"].main[1][0].node // empty' "$workflow_path")"
   policy_true_target="$(jq -r '.connections["Policy Error?"].main[0][0].node // empty' "$workflow_path")"
   policy_false_target="$(jq -r '.connections["Policy Error?"].main[1][0].node // empty' "$workflow_path")"
+  parse_to_search="$(jq -r '.connections["Parse Embedding"].main[0] | any(.node == "Search Vectors")' "$workflow_path")"
+  parse_to_audit="$(jq -r '.connections["Parse Embedding"].main[0] | any(.node == "Insert Audit")' "$workflow_path")"
+  search_to_audit="$(jq -r '.connections["Search Vectors"].main[0] | any(.node == "Insert Audit")' "$workflow_path")"
   search_query="$(jq -r '.nodes[] | select(.name == "Search Vectors") | .parameters.query' "$workflow_path")"
   search_replacement="$(jq -r '.nodes[] | select(.name == "Search Vectors") | .parameters.additionalFields.queryReplacement' "$workflow_path")"
   audit_query="$(jq -r '.nodes[] | select(.name == "Insert Audit") | .parameters.query' "$workflow_path")"
@@ -67,6 +75,11 @@ check_workflow() {
     exit 1
   fi
 
+  if [[ "$continue_on_fail" != "true" ]]; then
+    echo "Evaluate Policy must continue on fail in ${workflow_path}" >&2
+    exit 1
+  fi
+
   if [[ "$validation_true_target" != "Error Response" || "$validation_false_target" != "Evaluate Policy" ]]; then
     echo "Validation Error? node must route true->Error Response and false->Evaluate Policy in ${workflow_path}" >&2
     exit 1
@@ -74,6 +87,11 @@ check_workflow() {
 
   if [[ "$policy_true_target" != "Error Response" || "$policy_false_target" != "Generate Query Embedding" ]]; then
     echo "Policy Error? node must route true->Error Response and false->Generate Query Embedding in ${workflow_path}" >&2
+    exit 1
+  fi
+
+  if [[ "$parse_to_search" != "true" || "$parse_to_audit" != "true" || "$search_to_audit" != "false" ]]; then
+    echo "Vector search audit flow must branch from Parse Embedding and not fan out from Search Vectors in ${workflow_path}" >&2
     exit 1
   fi
 

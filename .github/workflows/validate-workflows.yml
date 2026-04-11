@@ -23,6 +23,7 @@ jobs:
           bash scripts/ci/vector_search_workflow_check.sh
           bash scripts/ci/audit_append_workflow_check.sh
           bash scripts/ci/executor_dispatch_workflow_check.sh
+          bash scripts/ci/policy_approval_workflow_check.sh
 
       - name: Check Slack ingress security regression
         run: python3 -m unittest -v tests.test_slack_ingress_security

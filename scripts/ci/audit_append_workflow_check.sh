@@ -43,6 +43,7 @@ check_workflow() {
   local workflow_path="$1"
   local policy_url
   local check_policy_code
+  local continue_on_fail
   local validation_true_target
   local validation_false_target
   local policy_true_target
@@ -60,6 +61,7 @@ check_workflow() {
 
   policy_url="$(jq -r '.nodes[] | select(.name == "Evaluate Policy") | .parameters.url' "$workflow_path")"
   check_policy_code="$(jq -r '.nodes[] | select(.name == "Check Policy") | .parameters.jsCode' "$workflow_path")"
+  continue_on_fail="$(jq -r '.nodes[] | select(.name == "Evaluate Policy") | (.continueOnFail // false)' "$workflow_path")"
   validation_true_target="$(jq -r '.connections["Validation Error?"].main[0][0].node // empty' "$workflow_path")"
   validation_false_target="$(jq -r '.connections["Validation Error?"].main[1][0].node // empty' "$workflow_path")"
   policy_true_target="$(jq -r '.connections["Policy Error?"].main[0][0].node // empty' "$workflow_path")"
@@ -70,6 +72,11 @@ check_workflow() {
 
   if [[ "$policy_url" != "http://opa:8181/v1/data/ai/policy/result" ]]; then
     echo "Policy URL mismatch in ${workflow_path}" >&2
+    exit 1
+  fi
+
+  if [[ "$continue_on_fail" != "true" ]]; then
+    echo "Evaluate Policy must continue on fail in ${workflow_path}" >&2
     exit 1
   fi
 

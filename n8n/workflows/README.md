@@ -141,14 +141,15 @@ Examples in this document use `X-API-Key`, but the edge and workflow auth gates 
   },
   "approval": {
     "endpoint": "/webhook/policy/approval",
-    "method": "POST"
+    "method": "POST",
+    "token": "<opaque signed token from the prior policy response>"
   }
 }
 ```
 
 **Behavior:**
 - Requires authenticated ingress
-- Requires the prior `requires_approval` policy object and approval metadata emitted by the gated workflow response
+- Requires the prior `requires_approval` policy object and the signed approval metadata emitted by the gated workflow response
 - Uses parameterized SQL for the approval audit append side effect
 
 **Output:** Approval decision appended to `audit_events` only when tied to a valid prior policy path

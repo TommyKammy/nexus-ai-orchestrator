@@ -51,6 +51,7 @@ Examples in this document use `X-API-Key`, but the edge and workflow auth gates 
 **Input:**
 ```json
 {
+  "tenant_id": "t1",
   "scope": "user:123",
   "query": "PDF",
   "k": 5
@@ -78,7 +79,12 @@ Examples in this document use `X-API-Key`, but the edge and workflow auth gates 
   "action": "memory_write",
   "target": "user:123",
   "decision": "allowed",
-  "payload": {"optional": "data"}
+  "payload": {
+    "request_id": "req-123",
+    "policy_id": "executor-core-v1",
+    "policy_version": "2026-02-20",
+    "optional": "data"
+  }
 }
 ```
 

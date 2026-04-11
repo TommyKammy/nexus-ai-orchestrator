@@ -234,6 +234,7 @@ Policy quality queries are available at:
 ## Security Notes
 
 - All workflows validate inputs before database writes
+- Never interpolate request data directly into SQL strings in Postgres nodes; use `$1`, `$2`, ... placeholders with `additionalFields.queryReplacement`
 - Secrets patterns are blocked (API keys, tokens, private keys)
 - Audit events are append-only
 - Postgres credential uses internal Docker network (no SSL needed)

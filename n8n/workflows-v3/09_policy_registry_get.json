@@ -121,7 +121,10 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT workflow_id, task_type, tenant_id, scope_pattern, constraints_jsonb, enabled, created_at, updated_at FROM policy_workflows WHERE workflow_id='{{ $json.workflow_id.replace(/'/g, \"''\") }}' AND task_type='{{ $json.task_type.replace(/'/g, \"''\") }}' ORDER BY updated_at DESC LIMIT 1;"
+        "query": "SELECT workflow_id, task_type, tenant_id, scope_pattern, constraints_jsonb, enabled, created_at, updated_at FROM policy_workflows WHERE workflow_id=$1 AND task_type=$2 ORDER BY updated_at DESC LIMIT 1;",
+        "additionalFields": {
+          "queryReplacement": "={{ [\n  $json.workflow_id,\n  $json.task_type\n] }}"
+        }
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,

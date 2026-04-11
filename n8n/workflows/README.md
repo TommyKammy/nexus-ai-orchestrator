@@ -57,9 +57,12 @@ Examples in this document use `X-API-Key`, but the edge and workflow auth gates 
 }
 ```
 
-**Behavior:** Performs case-insensitive search on memory_vectors.content
+**Behavior:**
+- Evaluates policy before embedding lookup, vector search, and audit side effects proceed
+- Returns deny / requires-approval responses with policy metadata when access is blocked
+- Generates the query embedding, performs pgvector cosine search, and appends an audit event only for authorized requests
 
-**Output:** Search results stored in execution data; audit event logged
+**Output:** Search results returned with ranking metadata, `request_id`, and policy context
 
 ---
 
@@ -84,7 +87,12 @@ Examples in this document use `X-API-Key`, but the edge and workflow auth gates 
 - Decision must be: `allowed`, `denied`, or `requires_approval`
 - `payload.request_id`, `payload.policy_id`, `payload.policy_version` are required
 
-**Output:** Record stored in `audit_events` table with `payload_jsonb`
+**Behavior:**
+- Evaluates policy before writing audit events
+- Returns deny / requires-approval responses instead of inserting rows when policy blocks the request
+- Persists the audit row only after an `allow` decision
+
+**Output:** Record stored in `audit_events` with policy metadata and `payload_jsonb`
 
 ---
 
@@ -125,11 +133,25 @@ Examples in this document use `X-API-Key`, but the edge and workflow auth gates 
   "approver": "alice@example.com",
   "comment": "allowed for incident response",
   "policy_id": "executor-core-v1",
-  "policy_version": "2026-02-20"
+  "policy_version": "2026-02-20",
+  "policy": {
+    "policy_id": "executor-core-v1",
+    "policy_version": "2026-02-20",
+    "decision": "requires_approval"
+  },
+  "approval": {
+    "endpoint": "/webhook/policy/approval",
+    "method": "POST"
+  }
 }
 ```
 
-**Output:** Approval decision appended to `audit_events`
+**Behavior:**
+- Requires authenticated ingress
+- Requires the prior `requires_approval` policy object and approval metadata emitted by the gated workflow response
+- Uses parameterized SQL for the approval audit append side effect
+
+**Output:** Approval decision appended to `audit_events` only when tied to a valid prior policy path
 
 ---
 

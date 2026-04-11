@@ -329,7 +329,6 @@ SQL
     -e N8N_BLOCK_ENV_ACCESS_IN_NODE=false \
     -e WEBHOOK_URL="${WEBHOOK_BASE_URL}" \
     -e N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=false \
-    -e SLACK_SIG_VERIFY_ENABLED=false \
     -e N8N_PUBLIC_API_DISABLED=true \
     -e CI=true \
     -e APP_ENV=ci \

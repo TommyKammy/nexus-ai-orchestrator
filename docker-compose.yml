@@ -97,9 +97,6 @@ services:
       N8N_EDITOR_BASE_URL: https://${N8N_HOST}/
       N8N_SECURE_COOKIE: true
 
-      # Slack signature verification (TEMPORARILY DISABLED - n8n 2.7.4 blocks crypto module)
-      # WARNING: Re-enable after upgrading n8n or using external verification
-      SLACK_SIG_VERIFY_ENABLED: "false"
       OPA_URL: ${OPA_URL:-http://opa:8181}
 
     volumes:
@@ -110,6 +107,18 @@ services:
       - postgres
       - redis
       - opa
+      - slack-request-verifier
+
+  slack-request-verifier:
+    build:
+      context: ./docker/slack-request-verifier
+      dockerfile: Dockerfile
+    container_name: ai-slack-request-verifier
+    restart: always
+    environment:
+      SLACK_SIGNING_SECRET: ${SLACK_SIGNING_SECRET:?set SLACK_SIGNING_SECRET}
+      SLACK_VERIFIER_PORT: 8089
+      N8N_INTERNAL_BASE_URL: http://n8n:5678
 
   executor:
     image: python:3.11-slim
@@ -142,8 +151,6 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      # Internal auth header for Slack webhook security (since signature verification is disabled)
-      SLACK_INTERNAL_AUTH: ${SLACK_INTERNAL_AUTH:-slack-internal-auth-token-change-me}
       # API key used by Caddy to protect and proxy webhook endpoints
       N8N_WEBHOOK_API_KEY: ${N8N_WEBHOOK_API_KEY:?set N8N_WEBHOOK_API_KEY}
     volumes:
@@ -152,6 +159,7 @@ services:
       - ./caddy_config:/config
     depends_on:
       - n8n
+      - slack-request-verifier
     dns:
       - 8.8.8.8
       - 1.1.1.1

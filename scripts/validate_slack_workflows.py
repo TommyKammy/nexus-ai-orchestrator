@@ -30,17 +30,25 @@ def validate_slack_workflow(filepath: Path) -> tuple[bool, list[str]]:
     if not is_slack_webhook_workflow(workflow):
         return None, ["Not a Slack webhook workflow"]
     
+    nodes = workflow.get('nodes', [])
+    connections = workflow.get('connections', {})
+
     # Find respondToWebhook node (ACK) - by type only, not by name
     ack_node = None
-    for node in workflow.get('nodes', []):
+    for node in nodes:
         node_type = node.get('type', '')
         if node_type == 'n8n-nodes-base.respondToWebhook':
-            ack_node = node
-            break
-    
+            if node.get('name') == 'Immediate ACK':
+                ack_node = node
+                break
+
     if not ack_node:
         errors.append(f"No respondToWebhook node found (Immediate ACK)")
         return False, errors
+
+    slack_webhook_edges = connections.get('Slack Webhook', {}).get('main', [])
+    if not slack_webhook_edges or not slack_webhook_edges[0] or slack_webhook_edges[0][0].get('node') != 'Immediate ACK':
+        errors.append("Slack Webhook must connect directly to Immediate ACK")
     
     params = ack_node.get('parameters', {})
     respond_with = params.get('respondWith', '')
@@ -79,7 +87,25 @@ def validate_slack_workflow(filepath: Path) -> tuple[bool, list[str]]:
     else:
         # Warn but don't fail if json field is empty (may be configured differently)
         pass
-    
+
+    router_node = next((
+        node for node in nodes
+        if node.get('name') == 'Call Brain Router'
+        and node.get('type') == 'n8n-nodes-base.httpRequest'
+    ), None)
+    router_headers = (
+        router_node
+        .get('parameters', {})
+        .get('headerParameters', {})
+        .get('parameters', [])
+        if router_node else []
+    )
+    if not any(
+        header.get('name') == 'X-API-Key' and 'N8N_WEBHOOK_API_KEY' in str(header.get('value', ''))
+        for header in router_headers
+    ):
+        errors.append("Call Brain Router must send X-API-Key using N8N_WEBHOOK_API_KEY")
+
     return len(errors) == 0, errors
 
 def main():

@@ -85,6 +85,8 @@ require_pattern "Unauthorized: Invalid or missing API key" "$CADDYFILE"
 reject_pattern 'X-API-Key[[:space:]]+[0-9a-fA-F]{32,}' "$CADDYFILE"
 # Reject internal key-injection route for externally reachable webhook path.
 reject_pattern 'handle[[:space:]]+/webhook/chat/router-v1' "$CADDYFILE"
+reject_pattern 'X-Internal-Auth' "$CADDYFILE"
+reject_pattern 'SLACK_INTERNAL_AUTH' "$CADDYFILE"
 
 # Caddy service must receive webhook auth key from environment.
 caddy_block="$(
@@ -102,6 +104,11 @@ fi
 
 if ! grep -Fq 'N8N_WEBHOOK_API_KEY: ${N8N_WEBHOOK_API_KEY:?set N8N_WEBHOOK_API_KEY}' <<<"$caddy_block"; then
   echo "Caddy service must include N8N_WEBHOOK_API_KEY env wiring in ${COMPOSE_FILE}" >&2
+  exit 1
+fi
+
+if grep -Fq 'SLACK_INTERNAL_AUTH' <<<"$caddy_block"; then
+  echo "Caddy service must not inject SLACK_INTERNAL_AUTH for Slack ingress." >&2
   exit 1
 fi
 

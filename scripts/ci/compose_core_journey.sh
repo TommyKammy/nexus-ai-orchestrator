@@ -14,6 +14,7 @@ fi
 POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-}"
 N8N_WEBHOOK_API_KEY="${N8N_WEBHOOK_API_KEY:-ci-local-webhook-key}"
 N8N_ENCRYPTION_KEY="${N8N_ENCRYPTION_KEY:-ci-local-encryption-key-32chars}"
+SLACK_SIGNING_SECRET="${SLACK_SIGNING_SECRET:-ci-local-slack-signing-secret}"
 
 if [[ -z "$POSTGRES_PASSWORD" ]]; then
   echo "POSTGRES_PASSWORD is required (.env or environment)." >&2
@@ -22,6 +23,7 @@ fi
 
 export N8N_WEBHOOK_API_KEY
 export N8N_ENCRYPTION_KEY
+export SLACK_SIGNING_SECRET
 
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || {

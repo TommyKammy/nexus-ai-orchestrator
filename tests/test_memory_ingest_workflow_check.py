@@ -52,6 +52,13 @@ class MemoryIngestWorkflowCheckTests(unittest.TestCase):
             }
         return node
 
+    def _node(self, name: str, node_type: str, parameters: Optional[dict] = None) -> dict:
+        return {
+            "name": name,
+            "type": node_type,
+            "parameters": parameters or {},
+        }
+
     def _run_check(self, repo_root: Path) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             ["bash", "scripts/ci/memory_ingest_workflow_check.sh"],
@@ -254,7 +261,7 @@ class MemoryIngestWorkflowCheckTests(unittest.TestCase):
             RETURNING id, content_hash;
             """
         ).strip()
-        loose_vector_replacement = "={{ { content_hash: 'hash', values: ['tenant', 'scope', 'text', 'embedding', '[]', 'api', 'hash', '{}'] } }}"
+        loose_vector_replacement = "={{ ['tenant', 'scope', 'text', 'embedding', '[]', 'api', 'hash', '{}'] }}"
 
         self._write_workflow(
             repo_root,
@@ -288,6 +295,149 @@ class MemoryIngestWorkflowCheckTests(unittest.TestCase):
             "Insert Vector queryReplacement in n8n/workflows/01_memory_ingest.json must preserve content_hash",
             result.stderr,
         )
+
+    def test_check_fails_when_query_replacement_has_fewer_bindings_than_placeholders(self):
+        repo_root = self._make_temp_repo()
+        safe_vector_query = textwrap.dedent(
+            """
+            INSERT INTO memory_vectors (
+              tenant_id,
+              scope,
+              content,
+              embedding,
+              tags,
+              source,
+              content_hash,
+              metadata_jsonb,
+              created_at
+            )
+            VALUES (
+              $1,
+              $2,
+              $3,
+              $4::vector,
+              $5::jsonb,
+              $6,
+              $7,
+              $8::jsonb,
+              NOW()
+            )
+            ON CONFLICT (tenant_id, scope, content_hash)
+            WHERE content_hash IS NOT NULL
+            DO UPDATE SET
+              content = EXCLUDED.content,
+              embedding = EXCLUDED.embedding,
+              tags = EXCLUDED.tags,
+              source = EXCLUDED.source,
+              metadata_jsonb = EXCLUDED.metadata_jsonb
+            RETURNING id, content_hash;
+            """
+        ).strip()
+        safe_vector_replacement = "={{ ['tenant', 'scope', 'text', 'embedding', '[]', 'api', $input.first().json.content_hash, '{}'] }}"
+
+        self._write_workflow(
+            repo_root,
+            "n8n/workflows/01_memory_ingest.json",
+            [
+                self._postgres_node("Insert Facts", "INSERT INTO memory_facts (subject, predicate) VALUES ($1, $2);", "={{ ['only-one'] }}"),
+                self._postgres_node("Insert Vector", safe_vector_query, safe_vector_replacement),
+                self._postgres_node("Insert Audit", "SELECT 1;"),
+            ],
+        )
+        self._write_workflow(
+            repo_root,
+            "n8n/workflows-v3/01_memory_ingest.json",
+            [
+                self._postgres_node("Insert Vector", safe_vector_query, safe_vector_replacement),
+                self._postgres_node("Insert Audit", "SELECT 1;"),
+            ],
+        )
+        self._write_workflow(
+            repo_root,
+            "n8n/workflows/01_memory_ingest_v3_cached.json",
+            [
+                self._postgres_node("Insert Vector", safe_vector_query, safe_vector_replacement),
+                self._postgres_node("Insert Audit", "SELECT 1;"),
+            ],
+        )
+
+        result = self._run_check(repo_root)
+
+        self.assertNotEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+        self.assertIn(
+            "queryReplacement only provides 1 bindings for 2 positional placeholders in n8n/workflows/01_memory_ingest.json :: Insert Facts",
+            result.stderr,
+        )
+
+    def test_check_ignores_non_postgres_nodes_named_insert_vector(self):
+        repo_root = self._make_temp_repo()
+        safe_vector_query = textwrap.dedent(
+            """
+            INSERT INTO memory_vectors (
+              tenant_id,
+              scope,
+              content,
+              embedding,
+              tags,
+              source,
+              content_hash,
+              metadata_jsonb,
+              created_at
+            )
+            VALUES (
+              $1,
+              $2,
+              $3,
+              $4::vector,
+              $5::jsonb,
+              $6,
+              $7,
+              $8::jsonb,
+              NOW()
+            )
+            ON CONFLICT (tenant_id, scope, content_hash)
+            WHERE content_hash IS NOT NULL
+            DO UPDATE SET
+              content = EXCLUDED.content,
+              embedding = EXCLUDED.embedding,
+              tags = EXCLUDED.tags,
+              source = EXCLUDED.source,
+              metadata_jsonb = EXCLUDED.metadata_jsonb
+            RETURNING id, content_hash;
+            """
+        ).strip()
+        safe_vector_replacement = "={{ ['tenant', 'scope', 'text', 'embedding', '[]', 'api', $input.first().json.content_hash, '{}'] }}"
+
+        self._write_workflow(
+            repo_root,
+            "n8n/workflows/01_memory_ingest.json",
+            [
+                self._postgres_node("Insert Vector", safe_vector_query, safe_vector_replacement),
+                self._node("Insert Vector", "n8n-nodes-base.code", {"jsCode": "return [{ json: { ignored: true } }];"}),
+                self._postgres_node("Insert Audit", "SELECT 1;"),
+            ],
+        )
+        self._write_workflow(
+            repo_root,
+            "n8n/workflows-v3/01_memory_ingest.json",
+            [
+                self._postgres_node("Insert Vector", safe_vector_query, safe_vector_replacement),
+                self._postgres_node("Insert Audit", "SELECT 1;"),
+            ],
+        )
+        self._write_workflow(
+            repo_root,
+            "n8n/workflows/01_memory_ingest_v3_cached.json",
+            [
+                self._postgres_node("Insert Vector", safe_vector_query, safe_vector_replacement),
+                self._postgres_node("Insert Audit", "SELECT 1;"),
+            ],
+        )
+
+        result = self._run_check(repo_root)
+
+        self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+        self.assertIn("Memory ingest workflow metadata checks passed.", result.stdout)
 
 
 if __name__ == "__main__":

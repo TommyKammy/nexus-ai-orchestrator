@@ -41,13 +41,126 @@ query_has_positional_placeholders() {
   grep -Eq '\$[0-9]+' <<<"$query"
 }
 
+query_highest_positional_placeholder() {
+  local query="$1"
+  python3 - "$query" <<'PY'
+import re
+import sys
+
+query = sys.argv[1]
+placeholders = [int(match) for match in re.findall(r'\$(\d+)', query)]
+print(max(placeholders, default=0))
+PY
+}
+
+query_replacement_binding_count() {
+  local query_replacement="$1"
+  python3 - "$query_replacement" <<'PY'
+import sys
+
+expr = sys.argv[1].strip()
+if expr.startswith('={{') and expr.endswith('}}'):
+    expr = expr[3:-2].strip()
+
+if not expr.startswith('[') or not expr.endswith(']'):
+    print("unparseable")
+    raise SystemExit(0)
+
+body = expr[1:-1]
+depth = 0
+count = 0
+token_started = False
+in_single = False
+in_double = False
+in_backtick = False
+escape = False
+
+for ch in body:
+    if in_single:
+        token_started = True
+        if escape:
+            escape = False
+        elif ch == '\\':
+            escape = True
+        elif ch == "'":
+            in_single = False
+        continue
+
+    if in_double:
+        token_started = True
+        if escape:
+            escape = False
+        elif ch == '\\':
+            escape = True
+        elif ch == '"':
+            in_double = False
+        continue
+
+    if in_backtick:
+        token_started = True
+        if escape:
+            escape = False
+        elif ch == '\\':
+            escape = True
+        elif ch == '`':
+            in_backtick = False
+        continue
+
+    if ch == "'":
+        in_single = True
+        token_started = True
+        continue
+
+    if ch == '"':
+        in_double = True
+        token_started = True
+        continue
+
+    if ch == '`':
+        in_backtick = True
+        token_started = True
+        continue
+
+    if ch in '([{':
+        depth += 1
+        token_started = True
+        continue
+
+    if ch in ')]}':
+        if depth == 0:
+            print("unparseable")
+            raise SystemExit(0)
+        depth -= 1
+        token_started = True
+        continue
+
+    if ch == ',' and depth == 0:
+        if token_started:
+            count += 1
+            token_started = False
+        continue
+
+    if not ch.isspace():
+        token_started = True
+
+if in_single or in_double or in_backtick or depth != 0:
+    print("unparseable")
+    raise SystemExit(0)
+
+if token_started:
+    count += 1
+
+print(count)
+PY
+}
+
 check_insert_vector_contract() {
   local workflow_path="$1"
   local query
   local query_replacement
 
-  query="$(jq -r '.nodes[] | select(.name == "Insert Vector") | .parameters.query' "$workflow_path")"
-  query_replacement="$(jq -r '.nodes[] | select(.name == "Insert Vector") | .parameters.additionalFields.queryReplacement' "$workflow_path")"
+  query="$(jq -r '.nodes[] | select(.type == "n8n-nodes-base.postgres" and .name == "Insert Vector") | .parameters.query' "$workflow_path")"
+  query_replacement="$(jq -r '.nodes[] | select(.type == "n8n-nodes-base.postgres" and .name == "Insert Vector") | .parameters.additionalFields.queryReplacement' "$workflow_path")"
 
   if [[ -z "$query" || "$query" == "null" ]]; then
     die "Insert Vector query not found: ${workflow_path}"
@@ -73,6 +186,8 @@ check_postgres_node() {
   local query
   local query_replacement
   local has_query_replacement="false"
+  local highest_placeholder
+  local binding_count
 
   query="$(jq -r --arg node_name "$node_name" '.nodes[] | select(.type == "n8n-nodes-base.postgres" and .name == $node_name) | .parameters.query' "$workflow_path")"
   query_replacement="$(jq -r --arg node_name "$node_name" '.nodes[] | select(.type == "n8n-nodes-base.postgres" and .name == $node_name) | .parameters.additionalFields.queryReplacement' "$workflow_path")"
@@ -92,6 +207,14 @@ check_postgres_node() {
   if query_has_positional_placeholders "$query"; then
     if [[ "$has_query_replacement" != "true" ]]; then
       die "Parameterized SQL requires queryReplacement in ${workflow_path} :: ${node_name}"
+    fi
+    highest_placeholder="$(query_highest_positional_placeholder "$query")"
+    binding_count="$(query_replacement_binding_count "$query_replacement")"
+    if [[ ! "$binding_count" =~ ^[0-9]+$ ]]; then
+      die "queryReplacement must be a statically countable array expression in ${workflow_path} :: ${node_name}"
+    fi
+    if (( binding_count < highest_placeholder )); then
+      die "queryReplacement only provides ${binding_count} bindings for ${highest_placeholder} positional placeholders in ${workflow_path} :: ${node_name}"
     fi
     return
   fi

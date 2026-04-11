@@ -60,8 +60,11 @@ class MemoryIngestWorkflowCheckTests(unittest.TestCase):
         }
 
     def _run_check(self, repo_root: Path) -> subprocess.CompletedProcess[str]:
+        bash_path = shutil.which("bash")
+        if bash_path is None:
+            self.fail("bash executable not found in PATH")
         return subprocess.run(
-            ["bash", "scripts/ci/memory_ingest_workflow_check.sh"],
+            [bash_path, "scripts/ci/memory_ingest_workflow_check.sh"],
             cwd=repo_root,
             capture_output=True,
             text=True,

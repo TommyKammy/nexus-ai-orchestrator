@@ -37,7 +37,16 @@ require_parameterized_query() {
   fi
 
   for pattern in "$@"; do
-    if ! grep -Fq "$pattern" <<<"$query"; then
+    if [[ "$pattern" =~ ^\$([0-9]+)$ ]]; then
+      local idx
+      local placeholder_regex
+      idx="${BASH_REMATCH[1]}"
+      printf -v placeholder_regex '(^|[^0-9])\\$%s([^0-9]|$)' "$idx"
+      if ! grep -Eq "$placeholder_regex" <<<"$query"; then
+        echo "Missing '${pattern}' in '${node_name}' query for ${workflow_path}" >&2
+        exit 1
+      fi
+    elif ! grep -Fq -- "$pattern" <<<"$query"; then
       echo "Missing '${pattern}' in '${node_name}' query for ${workflow_path}" >&2
       exit 1
     fi

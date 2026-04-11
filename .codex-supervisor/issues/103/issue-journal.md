@@ -21,7 +21,7 @@ The new regression coverage proves the rename case that motivated the review: do
 Summary: Tightened legacy doc alias detection for renamed workflows and added regression coverage for the remaining PR #105 review thread
 State hint: addressing_review
 Blocked reason: none
-Tests: `gh pr view 105 --repo TommyKammy/nexus-ai-orchestrator --json number,url,isDraft,headRefName,headRefOid,baseRefName,mergeStateStatus,reviewDecision,statusCheckRollup`; `python3 /Users/jp.infra/.codex/plugins/cache/openai-curated/github/fb0a18376bcd9f2604047fbe7459ec5aed70c64b/skills/gh-address-comments/scripts/fetch_comments.py --repo TommyKammy/nexus-ai-orchestrator --pr 105`; `python3 -m unittest -v tests.test_branch_protection_check_names`; `bash scripts/ci/branch_protection_check_names_check.sh`; `bash scripts/ci/workflow_schema_check.sh`; `bash scripts/ci/build.sh`
+Tests: `gh pr view 105 --repo TommyKammy/nexus-ai-orchestrator --json number,url,isDraft,headRefName,headRefOid,baseRefName,mergeStateStatus,reviewDecision,statusCheckRollup`; `python3 <redacted-local-path> --repo TommyKammy/nexus-ai-orchestrator --pr 105`; `python3 -m unittest -v tests.test_branch_protection_check_names`; `bash scripts/ci/branch_protection_check_names_check.sh`; `bash scripts/ci/workflow_schema_check.sh`; `bash scripts/ci/build.sh`
 Next action: Commit and push the local review fix on `codex/issue-103`, then re-check PR #105 review-thread and merge state
 Failure signature: PRRT_kwDORd-8zc56RD68
 

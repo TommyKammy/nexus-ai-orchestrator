@@ -121,7 +121,10 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "DELETE FROM policy_workflows WHERE workflow_id='{{ $json.workflow_id.replace(/'/g, \"''\") }}' AND task_type='{{ $json.task_type.replace(/'/g, \"''\") }}' AND tenant_id='{{ $json.tenant_id.replace(/'/g, \"''\") }}' AND scope_pattern='{{ $json.scope_pattern.replace(/'/g, \"''\") }}';"
+        "query": "DELETE FROM policy_workflows WHERE workflow_id=$1 AND task_type=$2 AND tenant_id=$3 AND scope_pattern=$4;",
+        "additionalFields": {
+          "queryReplacement": "={{ [\n  $json.workflow_id,\n  $json.task_type,\n  $json.tenant_id,\n  $json.scope_pattern\n] }}"
+        }
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
@@ -140,7 +143,10 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "INSERT INTO policy_publish_logs (revision_id, action, actor, result, details_jsonb) VALUES ('draft', 'delete', '{{ $('Validate Input').first().json.actor.replace(/'/g, \"''\") }}', 'ok', '{{ JSON.stringify($('Validate Input').first().json).replace(/'/g, \"''\") }}'::jsonb);"
+        "query": "INSERT INTO policy_publish_logs (revision_id, action, actor, result, details_jsonb) VALUES ('draft', 'delete', $1, 'ok', $2::jsonb);",
+        "additionalFields": {
+          "queryReplacement": "={{ [\n  $('Validate Input').first().json.actor,\n  JSON.stringify($('Validate Input').first().json)\n] }}"
+        }
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,

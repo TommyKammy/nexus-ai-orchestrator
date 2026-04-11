@@ -139,7 +139,10 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "INSERT INTO policy_candidate_events (task_type, tenant_id, scope, source)\nVALUES ('{{ $json.task_type.replace(/'/g, \"''\") }}', '{{ $json.tenant_id.replace(/'/g, \"''\") }}', '{{ $json.scope.replace(/'/g, \"''\") }}', '{{ ($json.metadata.source || '11_policy_candidate_seed').replace(/'/g, \"''\") }}')\nRETURNING id, task_type, tenant_id, scope, created_at;"
+        "query": "INSERT INTO policy_candidate_events (task_type, tenant_id, scope, source)\nVALUES ($1, $2, $3, $4)\nRETURNING id, task_type, tenant_id, scope, created_at;",
+        "additionalFields": {
+          "queryReplacement": "={{ [\n  $json.task_type,\n  $json.tenant_id,\n  $json.scope,\n  $json.metadata.source || '11_policy_candidate_seed'\n] }}"
+        }
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,

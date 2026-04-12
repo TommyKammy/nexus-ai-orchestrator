@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import subprocess
 import shutil
 import tempfile
 import unittest
@@ -8,6 +9,9 @@ from pathlib import Path
 
 MODULE_PATH = (
     Path(__file__).resolve().parents[1] / "scripts" / "check_tenant_workflow_service_boundary.py"
+)
+WRAPPER_PATH = (
+    Path(__file__).resolve().parents[1] / "scripts" / "ci" / "tenant_workflow_service_boundary_check.sh"
 )
 SPEC = importlib.util.spec_from_file_location("tenant_workflow_service_boundary", MODULE_PATH)
 tenant_workflow_service_boundary = importlib.util.module_from_spec(SPEC)
@@ -104,6 +108,22 @@ class TenantWorkflowServiceBoundaryTests(unittest.TestCase):
         errors = tenant_workflow_service_boundary.validate_repo(repo_root)
 
         self.assertEqual(errors, [])
+
+    def test_shell_wrapper_resolves_repo_root_from_another_working_directory(self):
+        outside_dir = Path(tempfile.mkdtemp(prefix="tenant-workflow-boundary-cwd-"))
+        self.addCleanup(shutil.rmtree, outside_dir, ignore_errors=True)
+
+        result = subprocess.run(
+            ["bash", str(WRAPPER_PATH)],
+            cwd=outside_dir,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Tenant workflow service-boundary check FAILED", result.stdout)
+        self.assertEqual(result.stderr, "")
 
 
 if __name__ == "__main__":

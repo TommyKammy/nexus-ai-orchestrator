@@ -297,6 +297,32 @@ class SessionManager:
                     pass
             raise
     
+    def peek_session(self, session_id: str) -> Optional[Session]:
+        """
+        Read session state without mutating TTL or usage counters.
+
+        Args:
+            session_id: Session identifier
+
+        Returns:
+            Session object or None if not found, inactive, or expired
+        """
+        with self._lock:
+            session = self.sessions.get(session_id)
+
+            if not session:
+                return None
+
+            if not session.is_active:
+                logger.warning(f"Session {session_id} is inactive")
+                return None
+
+            if session.is_expired:
+                logger.info(f"Session {session_id} expired during read-only lookup")
+                return None
+
+            return session
+
     def get_session(self, session_id: str) -> Optional[Session]:
         """
         Get existing session by ID.
@@ -314,14 +340,14 @@ class SessionManager:
 
         with self._lock:
             session = self.sessions.get(session_id)
-            
+
             if not session:
                 return None
-            
+
             if not session.is_active:
                 logger.warning(f"Session {session_id} is inactive")
                 return None
-            
+
             if session.is_expired:
                 logger.info(f"Session {session_id} expired, destroying")
                 _, should_delete_state = self._destroy_session_unlocked(session_id)

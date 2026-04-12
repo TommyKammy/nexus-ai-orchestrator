@@ -930,7 +930,7 @@ class ExecutorHandler(BaseHTTPRequestHandler):
         session_id = self._require_string_field(body, 'session_id')
         self._require_authenticated_tenant_context("executor.session.destroy")
 
-        session = session_manager.get_session(session_id)
+        session = session_manager.peek_session(session_id)
         if session is not None:
             self._bind_session_tenant_to_authenticated_caller(
                 "executor.session.destroy",
@@ -964,6 +964,22 @@ class ExecutorHandler(BaseHTTPRequestHandler):
         files = self._optional_string_map_field(body, 'files')
         self._require_authenticated_tenant_context("executor.session.execute")
 
+        session = session_manager.peek_session(session_id)
+        if session is None:
+            self._send_json_response(
+                {
+                    "status": "error",
+                    "error": f"Session {session_id} not found or expired",
+                    "request_id": self.request_id,
+                },
+                404,
+            )
+            return
+
+        tenant_id = self._bind_session_tenant_to_authenticated_caller(
+            "executor.session.execute",
+            session.metadata.get("tenant_id"),
+        )
         session = session_manager.get_session(session_id)
         if session is None:
             self._send_json_response(
@@ -976,24 +992,18 @@ class ExecutorHandler(BaseHTTPRequestHandler):
             )
             return
 
-        scope = session.metadata.get("scope")
-        tenant_id = self._bind_session_tenant_to_authenticated_caller(
-            "executor.session.execute",
-            session.metadata.get("tenant_id"),
-        )
-        template = session.template
         policy_result = self._evaluate_policy(
             action="executor.session.execute",
             subject={
                 "tenant_id": tenant_id,
-                "scope": scope,
+                "scope": session.metadata.get("scope"),
                 "role": "api",
             },
             resource={
                 "session_id": session_id,
                 "tenant_id": tenant_id,
-                "scope": scope,
-                "template": template,
+                "scope": session.metadata.get("scope"),
+                "template": session.template,
             },
             context={
                 "request_id": self.request_id,

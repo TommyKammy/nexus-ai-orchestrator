@@ -126,6 +126,7 @@ K8s CI/load checks:
 - Threat model: `docs/security-threat-model-v1.md`
 - Security audit report: `docs/reports/security-audit-report-20260305.md`
 - Rollback/DR runbook: `docs/rollback-dr-runbook.md`
+- PostgreSQL tenant RLS rollout: `docs/postgres-tenant-rls-rollout.md`
 - Branch protection required checks runbook: `docs/branch-protection-checks-runbook.md`
 - DR drill evidence: `docs/reports/dr-drill-20260305.md`
 - Production readiness checklist: `docs/production-readiness-checklist.md`

@@ -128,7 +128,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT id, embedding FROM memory_vectors\nWHERE tenant_id = $1 AND scope = $2 AND content_hash = $3\nLIMIT 1;",
+        "query": "WITH tenant_context AS (SELECT set_config('app.current_tenant_id', $1, true) AS tenant_ctx)\nSELECT id, embedding FROM memory_vectors\nCROSS JOIN tenant_context\nWHERE tenant_id = $1 AND scope = $2 AND content_hash = $3\nLIMIT 1;",
         "additionalFields": {
           "queryReplacement": "={{ [$input.first().json.tenant_id, $input.first().json.scope, $input.first().json.content_hash] }}"
         }

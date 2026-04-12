@@ -890,13 +890,20 @@ class ExecutorHandler(BaseHTTPRequestHandler):
         files = self._optional_string_map_field(body, 'files')
 
         session = session_manager.get_session(session_id)
-        scope = ""
-        tenant_id = ""
-        template = ""
-        if session:
-            scope = str(session.metadata.get("scope", ""))
-            tenant_id = str(session.metadata.get("tenant_id", ""))
-            template = session.template
+        if session is None:
+            self._send_json_response(
+                {
+                    "status": "error",
+                    "error": f"Session {session_id} not found or expired",
+                    "request_id": self.request_id,
+                },
+                404,
+            )
+            return
+
+        scope = str(session.metadata.get("scope", ""))
+        tenant_id = str(session.metadata.get("tenant_id", ""))
+        template = session.template
         policy_result = self._evaluate_policy(
             action="executor.session.execute",
             subject={

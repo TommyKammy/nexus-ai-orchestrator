@@ -9,13 +9,13 @@ RLS_MIGRATION = REPO_ROOT / "sql" / "20260412_tenant_row_level_security.sql"
 MIGRATION_HELPER = REPO_ROOT / "scripts" / "apply-memory-audit-migration.sh"
 
 WORKFLOW_QUERIES = {
-    "n8n/workflows/01_memory_ingest.json": ("Insert Vector", "$1"),
-    "n8n/workflows/01_memory_ingest_v3_cached.json": ("Check Cache", "$1"),
-    "n8n/workflows/02_vector_search.json": ("Search Vectors", "$2"),
-    "n8n/workflows/04_executor_dispatch.json": ("Insert Episode", "$1"),
-    "n8n/workflows-v3/01_memory_ingest.json": ("Insert Vector", "$1"),
-    "n8n/workflows-v3/02_vector_search.json": ("Search Vectors", "$2"),
-    "n8n/workflows-v3/04_executor_dispatch.json": ("Insert Episode", "$1"),
+    "n8n/workflows/01_memory_ingest.json": ("Insert Vector", "$1", "\nFROM tenant_context\nON CONFLICT"),
+    "n8n/workflows/01_memory_ingest_v3_cached.json": ("Check Cache", "$1", "\nCROSS JOIN tenant_context\n"),
+    "n8n/workflows/02_vector_search.json": ("Search Vectors", "$2", "\nCROSS JOIN tenant_context\n"),
+    "n8n/workflows/04_executor_dispatch.json": ("Insert Episode", "$1", "\nFROM tenant_context;"),
+    "n8n/workflows-v3/01_memory_ingest.json": ("Insert Vector", "$1", "\nFROM tenant_context\nON CONFLICT"),
+    "n8n/workflows-v3/02_vector_search.json": ("Search Vectors", "$2", "\nCROSS JOIN tenant_context\n"),
+    "n8n/workflows-v3/04_executor_dispatch.json": ("Insert Episode", "$1", "\nFROM tenant_context;"),
 }
 
 
@@ -71,7 +71,7 @@ class PostgresTenantRlsTests(unittest.TestCase):
             )
 
     def test_workflow_queries_set_tenant_context_before_touching_rls_tables(self) -> None:
-        for relative_path, (node_name, tenant_param) in WORKFLOW_QUERIES.items():
+        for relative_path, (node_name, tenant_param, tenant_context_reference) in WORKFLOW_QUERIES.items():
             workflow = json.loads((REPO_ROOT / relative_path).read_text(encoding="utf-8"))
             query = next(
                 node["parameters"]["query"]
@@ -80,12 +80,17 @@ class PostgresTenantRlsTests(unittest.TestCase):
             )
 
             expected_snippet = (
-                f"WITH tenant_context AS (SELECT set_config('app.current_tenant_id', {tenant_param}, true))"
+                f"WITH tenant_context AS (SELECT set_config('app.current_tenant_id', {tenant_param}, true) AS tenant_ctx)"
             )
             self.assertIn(
                 expected_snippet,
                 query,
                 f"{relative_path}:{node_name} must set app.current_tenant_id in the same statement",
+            )
+            self.assertIn(
+                tenant_context_reference,
+                query,
+                f"{relative_path}:{node_name} must reference tenant_context so PostgreSQL executes set_config()",
             )
 
 

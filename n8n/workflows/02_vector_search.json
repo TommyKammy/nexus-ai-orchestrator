@@ -257,7 +257,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH tenant_context AS (SELECT set_config('app.current_tenant_id', $2, true))\nSELECT id, scope, content, tags, source, created_at,\n       (embedding <=> $1::vector) AS cosine_distance\nFROM memory_vectors\nWHERE tenant_id = $2 AND scope = $3\nORDER BY embedding <=> $1::vector\nLIMIT $4;",
+        "query": "WITH tenant_context AS (SELECT set_config('app.current_tenant_id', $2, true) AS tenant_ctx)\nSELECT id, scope, content, tags, source, created_at,\n       (embedding <=> $1::vector) AS cosine_distance\nFROM memory_vectors\nCROSS JOIN tenant_context\nWHERE tenant_id = $2 AND scope = $3\nORDER BY embedding <=> $1::vector\nLIMIT $4;",
         "additionalFields": {
           "queryReplacement": "={{ [$input.first().json.embedding, $input.first().json.tenant_id, $input.first().json.scope, Number($input.first().json.k)] }}"
         }

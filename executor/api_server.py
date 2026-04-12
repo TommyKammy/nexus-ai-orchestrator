@@ -901,8 +901,8 @@ class ExecutorHandler(BaseHTTPRequestHandler):
             )
             return
 
-        scope = str(session.metadata.get("scope", ""))
-        tenant_id = str(session.metadata.get("tenant_id", ""))
+        scope = session.metadata.get("scope")
+        tenant_id = session.metadata.get("tenant_id")
         template = session.template
         policy_result = self._evaluate_policy(
             action="executor.session.execute",

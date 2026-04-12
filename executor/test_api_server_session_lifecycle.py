@@ -258,6 +258,71 @@ def test_session_execute_denies_when_session_tenancy_metadata_is_missing():
         manager.stop()
 
 
+def test_session_execute_rejects_authenticated_tenant_mismatch_against_session():
+    manager = SessionManager(default_ttl=300, max_sessions=5, enable_cleanup_thread=False)
+    try:
+        with patch.dict("os.environ", {"EXECUTOR_API_KEY": "secret-key"}, clear=False), patch(
+            "executor.api_server.API_KEY", "secret-key"
+        ), patch("executor.api_server.session_manager", manager), patch(
+            "executor.session.CodeSandbox", _FakeSandbox
+        ), patch(
+            "executor.api_server.policy_client.evaluate",
+            return_value={
+                "decision": "allow",
+                "allow": True,
+                "requires_approval": False,
+                "risk_score": 0,
+                "reasons": [],
+            },
+        ) as evaluate_mock, patch(
+            "executor.api_server.policy_client.enforce", return_value=True
+        ), patch(
+            "executor.api_server.session_manager.execute_in_session",
+            return_value={
+                "status": "success",
+                "exit_code": 0,
+                "stdout": "session-ok",
+                "stderr": "",
+                "language": "python",
+            },
+        ) as execute_mock:
+            session_id = manager.create_session(
+                template="default",
+                ttl=120,
+                metadata={"tenant_id": "tenant-from-session", "scope": "analysis"},
+            )
+
+            server, thread = _start_server()
+            try:
+                conn = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+                conn.request(
+                    "POST",
+                    "/session/execute",
+                    body=json.dumps({"session_id": session_id, "code": "print('ok')", "language": "python"}),
+                    headers={
+                        "Content-Type": "application/json",
+                        "X-API-Key": "secret-key",
+                        "X-Authenticated-Tenant-Id": "tenant-from-auth",
+                    },
+                )
+                response = conn.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+                status = response.status
+                conn.close()
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+
+        assert status == 403
+        assert payload["status"] == "error"
+        assert "tenant" in payload["error"].lower()
+        execute_mock.assert_not_called()
+        evaluate_mock.assert_not_called()
+    finally:
+        manager.stop()
+
+
 def test_session_execute_denies_when_session_tenancy_metadata_is_not_string():
     manager = SessionManager(default_ttl=300, max_sessions=5, enable_cleanup_thread=False)
     try:

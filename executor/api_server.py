@@ -63,6 +63,15 @@ REQUEST_METRICS = {
     "statuses": {},
 }
 REQUEST_METRIC_EXCLUDE_PATHS = {"/metrics", "/metrics/prometheus", "/health"}
+AUTHENTICATED_TENANT_HEADER = "X-Authenticated-Tenant-Id"
+PROTECTED_TENANCY_ACTIONS = frozenset(
+    {
+        "executor.execute",
+        "executor.session.create",
+        "executor.session.execute",
+        "executor.session.destroy",
+    }
+)
 
 
 class RequestValidationError(ValueError):
@@ -607,6 +616,63 @@ class ExecutorHandler(BaseHTTPRequestHandler):
                 status=403,
             )
 
+    def _get_authenticated_tenant_id(self) -> Optional[str]:
+        raw_value = self.headers.get(AUTHENTICATED_TENANT_HEADER, "")
+        if not isinstance(raw_value, str):
+            return None
+        tenant_id = raw_value.strip()
+        return tenant_id or None
+
+    def _resolve_protected_tenant_id(
+        self,
+        action: str,
+        body: Dict[str, Any],
+        field: str = "tenant_id",
+    ) -> str:
+        request_tenant_id = body.get(field)
+        authenticated_tenant_id = self._get_authenticated_tenant_id()
+
+        if authenticated_tenant_id is not None:
+            if request_tenant_id is None:
+                return authenticated_tenant_id
+            if not isinstance(request_tenant_id, str) or not request_tenant_id.strip():
+                raise RequestValidationError(f"Field '{field}' must be a non-empty string")
+            if request_tenant_id.strip() != authenticated_tenant_id:
+                raise RequestValidationError(
+                    f"Invalid tenancy context for {action}: tenant_id mismatch",
+                    status=403,
+                )
+            return authenticated_tenant_id
+
+        if action in PROTECTED_TENANCY_ACTIONS and API_KEY:
+            raise RequestValidationError(
+                f"Authenticated tenant context required for {action}: missing {AUTHENTICATED_TENANT_HEADER}",
+                status=403,
+            )
+
+        return self._require_string_field(body, field)
+
+    def _bind_session_tenant_to_authenticated_caller(self, action: str, tenant_id: Any) -> str:
+        if not isinstance(tenant_id, str) or not tenant_id.strip():
+            raise RequestValidationError(
+                f"Invalid tenancy context for {action}: missing required fields subject.tenant_id, resource.tenant_id",
+                status=403,
+            )
+
+        normalized_tenant_id = tenant_id.strip()
+        authenticated_tenant_id = self._get_authenticated_tenant_id()
+        if authenticated_tenant_id is not None and authenticated_tenant_id != normalized_tenant_id:
+            raise RequestValidationError(
+                f"Invalid tenancy context for {action}: tenant_id mismatch",
+                status=403,
+            )
+        if action in PROTECTED_TENANCY_ACTIONS and API_KEY and authenticated_tenant_id is None:
+            raise RequestValidationError(
+                f"Authenticated tenant context required for {action}: missing {AUTHENTICATED_TENANT_HEADER}",
+                status=403,
+            )
+        return normalized_tenant_id
+
     def _handle_get_root(self):
         self._send_json_response({
             "status": "success",
@@ -736,8 +802,8 @@ class ExecutorHandler(BaseHTTPRequestHandler):
     
     def _handle_execute(self, body: Dict[str, Any]):
         """Handle direct code execution."""
-        self._require_fields_present(body, 'tenant_id', 'scope', 'code')
-        tenant_id = self._require_string_field(body, 'tenant_id')
+        self._require_fields_present(body, 'scope', 'code')
+        tenant_id = self._resolve_protected_tenant_id("executor.execute", body)
         scope = self._require_string_field(body, 'scope')
         code = self._require_string_field(body, 'code')
         language = self._optional_string_field(body, 'language', 'python')
@@ -804,8 +870,8 @@ class ExecutorHandler(BaseHTTPRequestHandler):
     
     def _handle_create_session(self, body: Dict[str, Any]):
         """Handle session creation."""
-        self._require_fields_present(body, 'tenant_id', 'scope')
-        tenant_id = self._require_string_field(body, 'tenant_id')
+        self._require_fields_present(body, 'scope')
+        tenant_id = self._resolve_protected_tenant_id("executor.session.create", body)
         scope = self._require_string_field(body, 'scope')
         template = self._optional_string_field(body, 'template', 'default')
         ttl = self._optional_int_field(body, 'ttl', 300)
@@ -862,7 +928,14 @@ class ExecutorHandler(BaseHTTPRequestHandler):
         """Handle session destruction."""
         self._require_fields_present(body, 'session_id')
         session_id = self._require_string_field(body, 'session_id')
-        
+
+        session = session_manager.get_session(session_id)
+        if session is not None:
+            self._bind_session_tenant_to_authenticated_caller(
+                "executor.session.destroy",
+                session.metadata.get("tenant_id"),
+            )
+
         success = session_manager.destroy_session(session_id)
         
         if success:
@@ -902,7 +975,10 @@ class ExecutorHandler(BaseHTTPRequestHandler):
             return
 
         scope = session.metadata.get("scope")
-        tenant_id = session.metadata.get("tenant_id")
+        tenant_id = self._bind_session_tenant_to_authenticated_caller(
+            "executor.session.execute",
+            session.metadata.get("tenant_id"),
+        )
         template = session.template
         policy_result = self._evaluate_policy(
             action="executor.session.execute",

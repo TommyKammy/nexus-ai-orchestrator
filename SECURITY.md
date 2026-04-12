@@ -232,6 +232,8 @@ All tenant-facing, executor-facing, policy-facing, and chat-facing n8n webhooks 
 - Exit condition for this exception: move the shared webhook auth gate off `$env.N8N_WEBHOOK_API_KEY` to a scoped credential or deployment-injected secret, then restore `N8N_BLOCK_ENV_ACCESS_IN_NODE=true`
 - Accepted request headers at the edge: `X-API-Key: <key>` or `Authorization: Bearer <key>`
 - Accepted request headers inside the workflow auth node: `X-API-Key: <key>` or `Authorization: Bearer <key>`
+- Protected executor ingress must also receive `X-Authenticated-Tenant-Id: <tenant>` from the authenticated upstream boundary; executor tenant context is derived from that header, not trusted from request-body `tenant_id`
+- If a protected request body still includes `tenant_id`, it must exactly match `X-Authenticated-Tenant-Id` or the request is rejected with `403`
 - Failure behavior: reject before side effects with `401 Unauthorized`
 - Slack slash-command ingress keeps its separate Slack signature flow through the internal `slack-request-verifier` service, using `SLACK_SIGNING_SECRET` plus a five-minute replay window
 

@@ -207,6 +207,112 @@ def test_session_execute_rejects_invalid_files_map_before_side_effects():
         manager.stop()
 
 
+def test_session_execute_denies_when_session_tenancy_metadata_is_missing():
+    manager = SessionManager(default_ttl=300, max_sessions=5, enable_cleanup_thread=False)
+    try:
+        with patch("executor.api_server.API_KEY", None), patch(
+            "executor.api_server.session_manager", manager
+        ), patch(
+            "executor.session.CodeSandbox", _FakeSandbox
+        ), patch(
+            "executor.api_server.policy_client.evaluate",
+            return_value={
+                "decision": "allow",
+                "allow": True,
+                "requires_approval": False,
+                "risk_score": 0,
+                "reasons": [],
+            },
+        ) as evaluate_mock, patch(
+            "executor.api_server.policy_client.enforce", return_value=True
+        ), patch(
+            "executor.api_server.session_manager.execute_in_session",
+            return_value={
+                "status": "success",
+                "exit_code": 0,
+                "stdout": "session-ok",
+                "stderr": "",
+                "language": "python",
+            },
+        ) as execute_mock:
+            session_id = manager.create_session(template="default", ttl=120, metadata={})
+
+            server, thread = _start_server()
+            try:
+                status, payload = _post_json(
+                    server.server_port,
+                    "/session/execute",
+                    {"session_id": session_id, "code": "print('ok')", "language": "python"},
+                )
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+
+        assert status == 403
+        assert payload["status"] == "error"
+        assert "tenant" in payload["error"].lower()
+        execute_mock.assert_not_called()
+        evaluate_mock.assert_not_called()
+    finally:
+        manager.stop()
+
+
+def test_session_execute_denies_when_session_tenancy_metadata_is_not_string():
+    manager = SessionManager(default_ttl=300, max_sessions=5, enable_cleanup_thread=False)
+    try:
+        with patch("executor.api_server.API_KEY", None), patch(
+            "executor.api_server.session_manager", manager
+        ), patch(
+            "executor.session.CodeSandbox", _FakeSandbox
+        ), patch(
+            "executor.api_server.policy_client.evaluate",
+            return_value={
+                "decision": "allow",
+                "allow": True,
+                "requires_approval": False,
+                "risk_score": 0,
+                "reasons": [],
+            },
+        ) as evaluate_mock, patch(
+            "executor.api_server.policy_client.enforce", return_value=True
+        ), patch(
+            "executor.api_server.session_manager.execute_in_session",
+            return_value={
+                "status": "success",
+                "exit_code": 0,
+                "stdout": "session-ok",
+                "stderr": "",
+                "language": "python",
+            },
+        ) as execute_mock:
+            session_id = manager.create_session(
+                template="default",
+                ttl=120,
+                metadata={"tenant_id": {"nested": "t1"}, "scope": ["analysis"]},
+            )
+
+            server, thread = _start_server()
+            try:
+                status, payload = _post_json(
+                    server.server_port,
+                    "/session/execute",
+                    {"session_id": session_id, "code": "print('ok')", "language": "python"},
+                )
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+
+        assert status == 403
+        assert payload["status"] == "error"
+        assert "invalid tenancy context" in payload["error"].lower()
+        execute_mock.assert_not_called()
+        evaluate_mock.assert_not_called()
+    finally:
+        manager.stop()
+
+
 def test_session_manager_persists_ttl_state_with_store():
     state_store = _FakeStateStore()
     manager = SessionManager(

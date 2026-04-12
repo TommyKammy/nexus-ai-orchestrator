@@ -16,6 +16,8 @@ decision := "deny" if {
 }
 
 allow if {
+	not deny_missing_tenancy
+	not deny_tenant_mismatch
 	not deny_task_type
 	not deny_scope_mismatch
 	not deny_network
@@ -24,10 +26,52 @@ allow if {
 
 requires_approval if approval_high_risk
 
+deny_reasons contains "missing_tenancy" if deny_missing_tenancy
+deny_reasons contains "tenant_mismatch" if deny_tenant_mismatch
 deny_reasons contains "task_type_not_allowed" if deny_task_type
 deny_reasons contains "scope_mismatch" if deny_scope_mismatch
 deny_reasons contains "network_not_allowed" if deny_network
 deny_reasons contains "high_risk_requires_approval" if approval_high_risk
+
+protected_action if input.action == "executor.execute"
+protected_action if input.action == "executor.session.create"
+protected_action if input.action == "executor.session.execute"
+
+tenancy_string(container, field) := value if {
+	raw := object.get(container, field, "")
+	is_string(raw)
+	value := trim(raw, " \t\r\n")
+}
+
+tenancy_string(container, field) := "" if {
+	raw := object.get(container, field, "")
+	not is_string(raw)
+}
+
+missing_tenancy_field(container, field) if {
+	tenancy_string(container, field) == ""
+}
+
+deny_missing_tenancy if {
+	protected_action
+	some field in ["tenant_id", "scope"]
+	missing_tenancy_field(input.subject, field)
+}
+
+deny_missing_tenancy if {
+	protected_action
+	some field in ["tenant_id", "scope"]
+	missing_tenancy_field(input.resource, field)
+}
+
+deny_tenant_mismatch if {
+	protected_action
+	subject_tenant_id := tenancy_string(input.subject, "tenant_id")
+	resource_tenant_id := tenancy_string(input.resource, "tenant_id")
+	subject_tenant_id != ""
+	resource_tenant_id != ""
+	subject_tenant_id != resource_tenant_id
+}
 
 deny_task_type if {
 	input.action == "executor.execute"

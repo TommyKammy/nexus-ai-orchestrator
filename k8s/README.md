@@ -67,7 +67,43 @@ If you apply the entire `k8s/config/deployment/` directory, install Prometheus O
 kubectl apply -f k8s/config/crd/executor-crd.yaml
 ```
 
-### 3. Build and Push Images
+### 3. Create Required Secrets
+
+The hardened Kubernetes path requires Redis authentication, Redis TLS/mTLS, and
+Ingress TLS before the workloads will become ready.
+
+Create these secrets in `executor-system` before applying the deployments:
+
+- `redis-auth`: opaque secret with key `password`
+- `redis-tls`: secret containing `ca.crt`, `tls.crt`, and `tls.key`
+- `executor-edge-tls`: ingress TLS certificate for `executor.local`
+
+Example:
+
+```bash
+kubectl create namespace executor-system --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl create secret generic redis-auth \
+  -n executor-system \
+  --from-literal=password='replace-with-strong-password'
+
+kubectl create secret generic redis-tls \
+  -n executor-system \
+  --from-file=ca.crt=/path/to/ca.crt \
+  --from-file=tls.crt=/path/to/redis-client-server.crt \
+  --from-file=tls.key=/path/to/redis-client-server.key
+
+kubectl create secret tls executor-edge-tls \
+  -n executor-system \
+  --cert=/path/to/executor-edge.crt \
+  --key=/path/to/executor-edge.key
+```
+
+Use distinct client/server certificates if your PKI policy requires it. The bundled
+manifests mount the same `redis-tls` secret into Redis, the operator, and the load
+balancer so authenticated internal clients can complete the TLS handshake.
+
+### 4. Build and Push Images
 
 ```bash
 # Update the build script with your registry
@@ -77,7 +113,7 @@ export REGISTRY=your-registry.com/executor
 bash k8s/config/deployment/build-images.sh
 ```
 
-### 4. Deploy Operator and Infrastructure
+### 5. Deploy Operator and Infrastructure
 
 ```bash
 kubectl apply -f k8s/config/deployment/operator-deployment.yaml
@@ -86,7 +122,11 @@ kubectl apply -f k8s/config/deployment/network-policies.yaml
 kubectl apply -f k8s/config/deployment/ingress.yaml
 ```
 
-### 5. Create Executor Pools
+Rollout note: `redis`, `executor-operator`, and `executor-load-balancer` will stay
+unready until `redis-auth` and `redis-tls` exist, and the ingress controller will not
+serve TLS for `executor-edge` until `executor-edge-tls` exists.
+
+### 6. Create Executor Pools
 
 ```bash
 # Create a pool for data science workloads
@@ -114,7 +154,7 @@ spec:
 EOF
 ```
 
-### 6. Verify Deployment
+### 7. Verify Deployment
 
 ```bash
 # Check operator
@@ -132,9 +172,14 @@ kubectl get svc -n executor-system
 # Check core stack resources
 kubectl get deploy,svc,ingress -n executor-system
 
-# Verify ingress routing (example with port-forward)
-kubectl -n ingress-nginx port-forward svc/ingress-nginx-controller 18081:80
-curl -H "Host: executor.local" http://127.0.0.1:18081/health
+# Verify ingress routing over TLS (example with port-forward)
+kubectl -n ingress-nginx port-forward svc/ingress-nginx-controller 18443:443
+curl --resolve executor.local:18443:127.0.0.1 \
+  --cacert /path/to/ingress-ca.crt \
+  https://executor.local:18443/health
+
+# Verify the ingress declares a TLS secret
+kubectl get ingress executor-edge -n executor-system -o jsonpath='{.spec.tls[0].secretName}{"\n"}'
 ```
 
 ## Custom Resources
@@ -313,17 +358,41 @@ kubectl describe executorpools python-data-pool -n executor-system
 ### Redis Connection Issues
 
 ```bash
-kubectl exec -it -n executor-system deployment/redis -- redis-cli ping
+kubectl exec -it -n executor-system deployment/redis -- sh -ec '
+  redis-cli \
+    --tls \
+    --cacert /etc/redis/tls/ca.crt \
+    --cert /etc/redis/tls/tls.crt \
+    --key /etc/redis/tls/tls.key \
+    -a "$REDIS_PASSWORD" \
+    ping
+'
 ```
 
 ### Session Migration Debugging
 
 ```bash
 # Check session in Redis
-kubectl exec -it -n executor-system deployment/redis -- redis-cli hgetall executor:session:SESSION_ID
+kubectl exec -it -n executor-system deployment/redis -- sh -ec '
+  redis-cli \
+    --tls \
+    --cacert /etc/redis/tls/ca.crt \
+    --cert /etc/redis/tls/tls.crt \
+    --key /etc/redis/tls/tls.key \
+    -a "$REDIS_PASSWORD" \
+    hgetall executor:session:SESSION_ID
+'
 
 # Check session files
-kubectl exec -it -n executor-system deployment/redis -- redis-cli hkeys executor:session:SESSION_ID:files
+kubectl exec -it -n executor-system deployment/redis -- sh -ec '
+  redis-cli \
+    --tls \
+    --cacert /etc/redis/tls/ca.crt \
+    --cert /etc/redis/tls/tls.crt \
+    --key /etc/redis/tls/tls.key \
+    -a "$REDIS_PASSWORD" \
+    hkeys executor:session:SESSION_ID:files
+'
 ```
 
 ## Cleanup

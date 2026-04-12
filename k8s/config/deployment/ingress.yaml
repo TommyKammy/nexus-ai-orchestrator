@@ -7,12 +7,17 @@ metadata:
     app.kubernetes.io/name: executor
     app.kubernetes.io/component: ingress
   annotations:
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "30"
 spec:
   # Requires an ingress controller that registers class name "nginx".
   # Override via environment-specific overlays if your class differs.
   ingressClassName: nginx
+  tls:
+    - hosts:
+        - executor.local
+      secretName: executor-edge-tls
   rules:
     # The host must resolve in DNS or be supplied via Host header.
     - host: executor.local

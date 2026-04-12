@@ -164,7 +164,20 @@ spec:
                 fieldRef:
                   fieldPath: metadata.namespace
             - name: REDIS_URL
-              value: "redis://redis.executor-system.svc.cluster.local:6379"
+              value: "rediss://redis.executor-system.svc.cluster.local:6379/0"
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-auth
+                  key: password
+            - name: REDIS_TLS_ENABLED
+              value: "true"
+            - name: REDIS_TLS_CA_CERT_FILE
+              value: /etc/redis/tls/ca.crt
+            - name: REDIS_TLS_CERT_FILE
+              value: /etc/redis/tls/tls.crt
+            - name: REDIS_TLS_KEY_FILE
+              value: /etc/redis/tls/tls.key
           resources:
             requests:
               cpu: 100m
@@ -188,6 +201,14 @@ spec:
                 - "import kopf; print('ready')"
             initialDelaySeconds: 5
             periodSeconds: 5
+          volumeMounts:
+            - name: redis-client-tls
+              mountPath: /etc/redis/tls
+              readOnly: true
+      volumes:
+        - name: redis-client-tls
+          secret:
+            secretName: redis-tls
 ---
 # Redis for session persistence and load balancer state
 apiVersion: apps/v1
@@ -218,6 +239,26 @@ spec:
       containers:
         - name: redis
           image: redis:7-alpine
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              exec redis-server \
+                --bind 0.0.0.0 \
+                --port 0 \
+                --tls-port 6379 \
+                --tls-cert-file /etc/redis/tls/tls.crt \
+                --tls-key-file /etc/redis/tls/tls.key \
+                --tls-ca-cert-file /etc/redis/tls/ca.crt \
+                --tls-auth-clients yes \
+                --requirepass "$REDIS_PASSWORD" \
+                --dir /data
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-auth
+                  key: password
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: false
@@ -234,12 +275,48 @@ spec:
             limits:
               cpu: 500m
               memory: 1Gi
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -ec
+                - |
+                  redis-cli \
+                    --tls \
+                    --cacert /etc/redis/tls/ca.crt \
+                    --cert /etc/redis/tls/tls.crt \
+                    --key /etc/redis/tls/tls.key \
+                    -a "$REDIS_PASSWORD" \
+                    ping | grep -q PONG
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -ec
+                - |
+                  redis-cli \
+                    --tls \
+                    --cacert /etc/redis/tls/ca.crt \
+                    --cert /etc/redis/tls/tls.crt \
+                    --key /etc/redis/tls/tls.key \
+                    -a "$REDIS_PASSWORD" \
+                    ping | grep -q PONG
+            initialDelaySeconds: 5
+            periodSeconds: 5
           volumeMounts:
             - name: redis-data
               mountPath: /data
+            - name: redis-server-tls
+              mountPath: /etc/redis/tls
+              readOnly: true
       volumes:
         - name: redis-data
           emptyDir: {}
+        - name: redis-server-tls
+          secret:
+            secretName: redis-tls
 ---
 apiVersion: v1
 kind: Service
@@ -304,7 +381,20 @@ spec:
               name: metrics
           env:
             - name: REDIS_URL
-              value: "redis://redis.executor-system.svc.cluster.local:6379"
+              value: "rediss://redis.executor-system.svc.cluster.local:6379/0"
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-auth
+                  key: password
+            - name: REDIS_TLS_ENABLED
+              value: "true"
+            - name: REDIS_TLS_CA_CERT_FILE
+              value: /etc/redis/tls/ca.crt
+            - name: REDIS_TLS_CERT_FILE
+              value: /etc/redis/tls/tls.crt
+            - name: REDIS_TLS_KEY_FILE
+              value: /etc/redis/tls/tls.key
             - name: ENABLE_GEO_ROUTING
               value: "false"
           resources:
@@ -326,6 +416,14 @@ spec:
               port: 8080
             initialDelaySeconds: 5
             periodSeconds: 5
+          volumeMounts:
+            - name: redis-client-tls
+              mountPath: /etc/redis/tls
+              readOnly: true
+      volumes:
+        - name: redis-client-tls
+          secret:
+            secretName: redis-tls
 ---
 apiVersion: v1
 kind: Service

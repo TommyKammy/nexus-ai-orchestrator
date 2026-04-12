@@ -5,6 +5,7 @@ FastAPI-based API for the global load balancer
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -55,7 +56,7 @@ async def lifespan(app: FastAPI):
     """Manage application lifespan."""
     # Startup
     logger.info("Starting Load Balancer Server")
-    redis_url = "redis://redis:6379"
+    redis_url = os.environ.get("REDIS_URL", "redis://redis:6379")
     await init_load_balancer(redis_url)
     yield
     # Shutdown

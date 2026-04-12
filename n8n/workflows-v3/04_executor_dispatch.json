@@ -307,7 +307,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "INSERT INTO memory_episodes (\n  tenant_id,\n  scope,\n  summary,\n  outcome,\n  started_at,\n  ended_at,\n  metadata_jsonb\n)\nVALUES (\n  $1,\n  $2,\n  'executor task executed',\n  $3,\n  NOW(),\n  NOW(),\n  $4::jsonb\n);",
+        "query": "WITH tenant_context AS (SELECT set_config('app.current_tenant_id', $1, true))\nINSERT INTO memory_episodes (\n  tenant_id,\n  scope,\n  summary,\n  outcome,\n  started_at,\n  ended_at,\n  metadata_jsonb\n)\nVALUES (\n  $1,\n  $2,\n  'executor task executed',\n  $3,\n  NOW(),\n  NOW(),\n  $4::jsonb\n);",
         "additionalFields": {
           "queryReplacement": "={{ [\n  $('Finalize Success Payload').first().json.tenant_id,\n  $('Finalize Success Payload').first().json.scope,\n  $('Finalize Success Payload').first().json.outcome,\n  JSON.stringify($('Finalize Success Payload').first().json.output || {})\n] }}"
         }

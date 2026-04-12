@@ -37,14 +37,19 @@ protected_action if input.action == "executor.execute"
 protected_action if input.action == "executor.session.create"
 protected_action if input.action == "executor.session.execute"
 
-missing_tenancy_field(container, field) if {
-	value := object.get(container, field, "")
-	not is_string(value)
+tenancy_string(container, field) := value if {
+	raw := object.get(container, field, "")
+	is_string(raw)
+	value := trim(raw, " \t\r\n")
+}
+
+tenancy_string(container, field) := "" if {
+	raw := object.get(container, field, "")
+	not is_string(raw)
 }
 
 missing_tenancy_field(container, field) if {
-	value := trim(object.get(container, field, ""))
-	value == ""
+	tenancy_string(container, field) == ""
 }
 
 deny_missing_tenancy if {
@@ -61,8 +66,8 @@ deny_missing_tenancy if {
 
 deny_tenant_mismatch if {
 	protected_action
-	subject_tenant_id := trim(object.get(input.subject, "tenant_id", ""))
-	resource_tenant_id := trim(object.get(input.resource, "tenant_id", ""))
+	subject_tenant_id := tenancy_string(input.subject, "tenant_id")
+	resource_tenant_id := tenancy_string(input.resource, "tenant_id")
 	subject_tenant_id != ""
 	resource_tenant_id != ""
 	subject_tenant_id != resource_tenant_id

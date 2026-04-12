@@ -202,8 +202,8 @@ Include the API key in request headers:
 curl -X POST http://localhost:8080/execute \
   -H "Content-Type: application/json" \
   -H "X-API-Key: your-secure-api-key-here" \
+  -H "X-Authenticated-Tenant-Id: tenant-123" \
   -d '{
-    "tenant_id": "tenant-123",
     "scope": "test",
     "code": "print(\"Hello World\")"
   }'
@@ -232,7 +232,9 @@ All tenant-facing, executor-facing, policy-facing, and chat-facing n8n webhooks 
 - Exit condition for this exception: move the shared webhook auth gate off `$env.N8N_WEBHOOK_API_KEY` to a scoped credential or deployment-injected secret, then restore `N8N_BLOCK_ENV_ACCESS_IN_NODE=true`
 - Accepted request headers at the edge: `X-API-Key: <key>` or `Authorization: Bearer <key>`
 - Accepted request headers inside the workflow auth node: `X-API-Key: <key>` or `Authorization: Bearer <key>`
-- Failure behavior: reject before side effects with `401 Unauthorized`
+- Protected executor ingress must also receive `X-Authenticated-Tenant-Id: <tenant>` from the authenticated upstream boundary; executor tenant context is derived from that header, not trusted from request-body `tenant_id`
+- If a protected request body still includes `tenant_id`, it must exactly match `X-Authenticated-Tenant-Id` or the request is rejected with `403`
+- Failure behavior: missing or invalid shared auth is rejected with `401 Unauthorized`; protected executor tenant mismatches or missing `X-Authenticated-Tenant-Id` are rejected with `403 Forbidden`
 - Slack slash-command ingress keeps its separate Slack signature flow through the internal `slack-request-verifier` service, using `SLACK_SIGNING_SECRET` plus a five-minute replay window
 
 This is intentional defense in depth. Caddy remains the first gate for `/webhook/*` with shared rate limiting, and still accepts the shared key through either `X-API-Key` or `Authorization: Bearer` for non-Slack webhooks. The `/webhook/slack-command` path is proxied through the internal `slack-request-verifier` service before n8n sees the request, so forged or replayed Slack-style requests fail with `401 Unauthorized` before any downstream workflow step runs while valid signed requests continue to the normal Slack workflow.

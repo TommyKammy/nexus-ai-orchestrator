@@ -4,7 +4,7 @@ import threading
 from http.server import HTTPServer
 from unittest.mock import patch
 
-from executor.api_server import ExecutorHandler
+from executor.api_server import AUTHENTICATED_TENANT_HEADER, ExecutorHandler
 from executor.session import SessionManager
 
 
@@ -34,8 +34,10 @@ class _FakeStateStore:
     def __init__(self):
         self.saved = {}
         self.deleted = []
+        self.save_calls = []
 
     def save(self, session_id, payload, ttl):
+        self.save_calls.append((session_id, ttl, payload["use_count"]))
         self.saved[session_id] = {"payload": payload, "ttl": ttl}
 
     def delete(self, session_id):
@@ -58,9 +60,12 @@ def _start_server():
     return server, thread
 
 
-def _post_json(port: int, path: str, payload: dict):
+def _post_json(port: int, path: str, payload: dict, headers: dict | None = None):
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
-    conn.request("POST", path, body=json.dumps(payload), headers={"Content-Type": "application/json"})
+    request_headers = {"Content-Type": "application/json"}
+    if headers:
+        request_headers.update(headers)
+    conn.request("POST", path, body=json.dumps(payload), headers=request_headers)
     response = conn.getresponse()
     body = response.read().decode("utf-8")
     conn.close()
@@ -256,6 +261,193 @@ def test_session_execute_denies_when_session_tenancy_metadata_is_missing():
         evaluate_mock.assert_not_called()
     finally:
         manager.stop()
+
+
+def test_session_execute_rejects_authenticated_tenant_mismatch_against_session():
+    state_store = _FakeStateStore()
+    manager = SessionManager(
+        default_ttl=300,
+        max_sessions=5,
+        enable_cleanup_thread=False,
+        state_store=state_store,
+    )
+    try:
+        with patch.dict("os.environ", {"EXECUTOR_API_KEY": "secret-key"}, clear=False), patch(
+            "executor.api_server.API_KEY", "secret-key"
+        ), patch("executor.api_server.session_manager", manager), patch(
+            "executor.session.CodeSandbox", _FakeSandbox
+        ), patch(
+            "executor.api_server.policy_client.evaluate",
+            return_value={
+                "decision": "allow",
+                "allow": True,
+                "requires_approval": False,
+                "risk_score": 0,
+                "reasons": [],
+            },
+        ) as evaluate_mock, patch(
+            "executor.api_server.policy_client.enforce", return_value=True
+        ), patch(
+            "executor.api_server.session_manager.execute_in_session",
+            return_value={
+                "status": "success",
+                "exit_code": 0,
+                "stdout": "session-ok",
+                "stderr": "",
+                "language": "python",
+            },
+        ) as execute_mock:
+            session_id = manager.create_session(
+                template="default",
+                ttl=120,
+                metadata={"tenant_id": "tenant-from-session", "scope": "analysis"},
+            )
+            session_before = manager.peek_session(session_id)
+            assert session_before is not None
+            last_used_before = session_before.last_used
+            assert len(state_store.save_calls) == 1
+            assert state_store.saved[session_id]["payload"]["use_count"] == 0
+
+            server, thread = _start_server()
+            try:
+                conn = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+                conn.request(
+                    "POST",
+                    "/session/execute",
+                    body=json.dumps({"session_id": session_id, "code": "print('ok')", "language": "python"}),
+                    headers={
+                        "Content-Type": "application/json",
+                        "X-API-Key": "secret-key",
+                        "X-Authenticated-Tenant-Id": "tenant-from-auth",
+                    },
+                )
+                response = conn.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+                status = response.status
+                conn.close()
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+
+        assert status == 403
+        assert payload["status"] == "error"
+        assert "tenant" in payload["error"].lower()
+        execute_mock.assert_not_called()
+        evaluate_mock.assert_not_called()
+        session_after = manager.peek_session(session_id)
+        assert session_after is not None
+        assert session_after.use_count == 0
+        assert session_after.last_used == last_used_before
+        assert len(state_store.save_calls) == 1
+        assert state_store.saved[session_id]["payload"]["use_count"] == 0
+    finally:
+        manager.stop()
+
+
+def test_session_destroy_rejects_authenticated_tenant_mismatch_without_touching_session():
+    state_store = _FakeStateStore()
+    manager = SessionManager(
+        default_ttl=300,
+        max_sessions=5,
+        enable_cleanup_thread=False,
+        state_store=state_store,
+    )
+    try:
+        with patch.dict("os.environ", {"EXECUTOR_API_KEY": "secret-key"}, clear=False), patch(
+            "executor.api_server.API_KEY", "secret-key"
+        ), patch("executor.api_server.session_manager", manager), patch(
+            "executor.session.CodeSandbox", _FakeSandbox
+        ):
+            session_id = manager.create_session(
+                template="default",
+                ttl=120,
+                metadata={"tenant_id": "tenant-from-session", "scope": "analysis"},
+            )
+            session_before = manager.peek_session(session_id)
+            assert session_before is not None
+            last_used_before = session_before.last_used
+            assert len(state_store.save_calls) == 1
+            server, thread = _start_server()
+            try:
+                status, payload = _post_json(
+                    server.server_port,
+                    "/session/destroy",
+                    {"session_id": session_id},
+                    {
+                        "X-API-Key": "secret-key",
+                        "X-Authenticated-Tenant-Id": "tenant-from-auth",
+                    },
+                )
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+
+        assert status == 403
+        assert payload["status"] == "error"
+        assert "tenant" in payload["error"].lower()
+        session_after = manager.peek_session(session_id)
+        assert session_after is not None
+        assert session_after.use_count == 0
+        assert session_after.last_used == last_used_before
+        assert len(state_store.save_calls) == 1
+        assert state_store.deleted == []
+    finally:
+        manager.stop()
+
+
+def test_session_execute_requires_authenticated_tenant_before_session_lookup():
+    with patch("executor.api_server.API_KEY", "secret-key"), patch(
+        "executor.api_server.session_manager.peek_session"
+    ) as peek_session_mock, patch(
+        "executor.api_server.session_manager.get_session"
+    ) as get_session_mock:
+        server, thread = _start_server()
+        try:
+            status, payload = _post_json(
+                server.server_port,
+                "/session/execute",
+                {"session_id": "missing-session", "code": "print('ok')", "language": "python"},
+                {"X-API-Key": "secret-key"},
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    assert status == 403
+    assert AUTHENTICATED_TENANT_HEADER.lower() in payload["error"].lower()
+    peek_session_mock.assert_not_called()
+    get_session_mock.assert_not_called()
+
+
+def test_session_destroy_requires_authenticated_tenant_before_session_lookup():
+    with patch("executor.api_server.API_KEY", "secret-key"), patch(
+        "executor.api_server.session_manager.peek_session"
+    ) as peek_session_mock, patch(
+        "executor.api_server.session_manager.get_session"
+    ) as get_session_mock, patch(
+        "executor.api_server.session_manager.destroy_session"
+    ) as destroy_session_mock:
+        server, thread = _start_server()
+        try:
+            status, payload = _post_json(
+                server.server_port,
+                "/session/destroy",
+                {"session_id": "missing-session"},
+                {"X-API-Key": "secret-key"},
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    assert status == 403
+    assert AUTHENTICATED_TENANT_HEADER.lower() in payload["error"].lower()
+    peek_session_mock.assert_not_called()
+    get_session_mock.assert_not_called()
+    destroy_session_mock.assert_not_called()
 
 
 def test_session_execute_denies_when_session_tenancy_metadata_is_not_string():

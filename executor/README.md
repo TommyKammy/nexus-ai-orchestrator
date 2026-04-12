@@ -53,8 +53,8 @@ curl http://localhost:8080/health
 curl -X POST http://localhost:8080/execute \
   -H "Content-Type: application/json" \
   -H "X-API-Key: change-me" \
+  -H "X-Authenticated-Tenant-Id: t1" \
   -d '{
-    "tenant_id": "t1",
     "scope": "user:123",
     "code": "print('Hello, Sandbox!')",
     "template": "default"
@@ -138,7 +138,6 @@ Execute code in a new sandbox.
 **Request:**
 ```json
 {
-  "tenant_id": "t1",
   "scope": "user:123",
   "code": "print('Hello')",
   "language": "python",
@@ -167,10 +166,12 @@ Execute code in a new sandbox.
 
 **Request requirements:**
 - Include `X-API-Key` on executor requests.
+- Include `X-Authenticated-Tenant-Id` on protected executor requests. The executor derives tenant context from this authenticated ingress header.
 - Send `Content-Type: application/json`.
 - Request body must be a JSON object.
 - Body size is capped by `EXECUTOR_MAX_REQUEST_BODY_BYTES` and returns `413` when exceeded.
 - These same POST requirements apply to `/execute`, `/session/create`, `/session/execute`, and `/session/destroy`.
+- If a request body still includes `tenant_id`, it must exactly match `X-Authenticated-Tenant-Id` or the request is rejected with `403`.
 
 #### POST /session/create
 Create a persistent session.
@@ -180,8 +181,8 @@ Create a persistent session.
 curl -X POST http://localhost:8080/session/create \
   -H "Content-Type: application/json" \
   -H "X-API-Key: change-me" \
+  -H "X-Authenticated-Tenant-Id: t1" \
   -d '{
-    "tenant_id": "t1",
     "scope": "user:123",
     "template": "python-ml",
     "ttl": 300
@@ -191,7 +192,6 @@ curl -X POST http://localhost:8080/session/create \
 **Request:**
 ```json
 {
-  "tenant_id": "t1",
   "scope": "user:123",
   "template": "python-ml",
   "ttl": 300
@@ -216,6 +216,7 @@ Execute code in an existing session.
 curl -X POST http://localhost:8080/session/execute \
   -H "Content-Type: application/json" \
   -H "X-API-Key: change-me" \
+  -H "X-Authenticated-Tenant-Id: t1" \
   -d '{
     "session_id": "abc123def456",
     "code": "print('\''In session'\'')",
@@ -240,6 +241,7 @@ Destroy a session.
 curl -X POST http://localhost:8080/session/destroy \
   -H "Content-Type: application/json" \
   -H "X-API-Key: change-me" \
+  -H "X-Authenticated-Tenant-Id: t1" \
   -d '{
     "session_id": "abc123def456"
   }'
@@ -395,8 +397,8 @@ sudo netstat -tlnp | grep 8080
 curl -X POST http://localhost:8080/execute \
   -H "Content-Type: application/json" \
   -H "X-API-Key: change-me" \
+  -H "X-Authenticated-Tenant-Id: t1" \
   -d '{
-    "tenant_id": "t1",
     "scope": "test",
     "code": "...",
     "timeout": 120
@@ -412,8 +414,8 @@ curl -X POST http://localhost:8080/execute \
 curl -X POST http://localhost:8080/execute \
   -H "Content-Type: application/json" \
   -H "X-API-Key: change-me" \
+  -H "X-Authenticated-Tenant-Id: t1" \
   -d '{
-    "tenant_id": "t1",
     "scope": "test",
     "code": "...",
     "template": "python-ml"

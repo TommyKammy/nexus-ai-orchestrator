@@ -237,7 +237,7 @@ def test_execute_succeeds_with_api_key_header_when_configured():
                 server.server_port,
                 "/execute",
                 {"tenant_id": "t1", "scope": "analysis", "code": "print('ok')", "language": "python"},
-                {"X-API-Key": "secret-key"},
+                {"X-API-Key": "secret-key", "X-Authenticated-Tenant-Id": "t1"},
             )
         finally:
             server.shutdown()
@@ -249,6 +249,82 @@ def test_execute_succeeds_with_api_key_header_when_configured():
     assert payload["tenant_id"] == "t1"
     assert payload["scope"] == "analysis"
     assert payload["result"]["stdout"] == "ok"
+
+
+def test_execute_uses_authenticated_tenant_when_body_omits_tenant_id():
+    with patch.dict(os.environ, {"EXECUTOR_API_KEY": "secret-key"}, clear=False), patch(
+        "executor.api_server.API_KEY", "secret-key"
+    ), patch(
+        "executor.api_server.template_manager.get_sandbox_kwargs", return_value={}
+    ), patch(
+        "executor.api_server.policy_client.evaluate",
+        return_value={
+            "decision": "allow",
+            "allow": True,
+            "requires_approval": False,
+            "risk_score": 0,
+            "reasons": [],
+        },
+    ), patch("executor.api_server.policy_client.enforce", return_value=True), patch(
+        "executor.api_server.CodeSandbox", _FakeSandbox
+    ):
+        server, thread = _start_server()
+        try:
+            status, payload, _headers = _post_json_raw(
+                server.server_port,
+                "/execute",
+                {"scope": "analysis", "code": "print('ok')", "language": "python"},
+                {
+                    "X-API-Key": "secret-key",
+                    "X-Authenticated-Tenant-Id": "tenant-from-auth",
+                },
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    assert status == 200
+    assert payload["status"] == "success"
+    assert payload["tenant_id"] == "tenant-from-auth"
+    assert payload["scope"] == "analysis"
+
+
+def test_execute_rejects_request_body_tenant_that_conflicts_with_authenticated_tenant():
+    with patch.dict(os.environ, {"EXECUTOR_API_KEY": "secret-key"}, clear=False), patch(
+        "executor.api_server.API_KEY", "secret-key"
+    ), patch(
+        "executor.api_server.policy_client.evaluate"
+    ) as evaluate_mock, patch("executor.api_server.policy_client.enforce") as enforce_mock, patch(
+        "executor.api_server.CodeSandbox"
+    ) as sandbox_cls:
+        server, thread = _start_server()
+        try:
+            status, payload, _headers = _post_json_raw(
+                server.server_port,
+                "/execute",
+                {
+                    "tenant_id": "tenant-from-body",
+                    "scope": "analysis",
+                    "code": "print('ok')",
+                    "language": "python",
+                },
+                {
+                    "X-API-Key": "secret-key",
+                    "X-Authenticated-Tenant-Id": "tenant-from-auth",
+                },
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    assert status == 403
+    assert payload["status"] == "error"
+    assert "tenant" in payload["error"].lower()
+    evaluate_mock.assert_not_called()
+    enforce_mock.assert_not_called()
+    sandbox_cls.assert_not_called()
 
 
 def test_execute_rejects_oversized_body_before_sandbox_run():
@@ -412,7 +488,10 @@ def test_options_echoes_request_id_header():
     assert status == 200
     assert headers["X-Request-ID"] == "opt-req-1"
     assert headers["Access-Control-Allow-Origin"] == "https://console.example.com"
-    assert headers["Access-Control-Allow-Headers"] == "Content-Type, X-API-Key, X-Request-ID"
+    assert (
+        headers["Access-Control-Allow-Headers"]
+        == "Content-Type, X-API-Key, X-Request-ID, X-Authenticated-Tenant-Id"
+    )
 
 
 def test_execute_missing_fields_returns_error():

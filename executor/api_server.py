@@ -557,6 +557,56 @@ class ExecutorHandler(BaseHTTPRequestHandler):
             return
         getattr(self, handler_name)(body)
 
+    def _validate_execution_tenancy_context(
+        self,
+        action: str,
+        subject: Dict[str, Any],
+        resource: Dict[str, Any],
+    ) -> None:
+        protected_actions = {
+            "executor.execute",
+            "executor.session.create",
+            "executor.session.execute",
+        }
+        if action not in protected_actions:
+            return
+
+        required_pairs = (
+            ("subject", "tenant_id"),
+            ("subject", "scope"),
+            ("resource", "tenant_id"),
+            ("resource", "scope"),
+        )
+        containers = {"subject": subject, "resource": resource}
+        missing = []
+        for container_name, field in required_pairs:
+            raw_value = containers[container_name].get(field)
+            if not isinstance(raw_value, str) or not raw_value.strip():
+                missing.append(f"{container_name}.{field}")
+
+        if missing:
+            joined = ", ".join(missing)
+            raise RequestValidationError(
+                f"Invalid tenancy context for {action}: missing required fields {joined}",
+                status=403,
+            )
+
+        subject_tenant_id = str(subject["tenant_id"]).strip()
+        resource_tenant_id = str(resource["tenant_id"]).strip()
+        if subject_tenant_id != resource_tenant_id:
+            raise RequestValidationError(
+                f"Invalid tenancy context for {action}: tenant_id mismatch",
+                status=403,
+            )
+
+        subject_scope = str(subject["scope"]).strip()
+        resource_scope = str(resource["scope"]).strip()
+        if subject_scope != resource_scope:
+            raise RequestValidationError(
+                f"Invalid tenancy context for {action}: scope mismatch",
+                status=403,
+            )
+
     def _handle_get_root(self):
         self._send_json_response({
             "status": "success",
@@ -632,6 +682,7 @@ class ExecutorHandler(BaseHTTPRequestHandler):
         resource: Dict[str, Any],
         context: Dict[str, Any]
     ) -> Dict[str, Any]:
+        self._validate_execution_tenancy_context(action, subject, resource)
         policy_input = {
             "subject": subject,
             "resource": resource,

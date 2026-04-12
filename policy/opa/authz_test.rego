@@ -42,6 +42,32 @@ test_authz_deny_scope_mismatch if {
 	result.reasons == ["scope_mismatch"]
 }
 
+test_authz_deny_missing_tenancy if {
+	result := data.ai.policy.result with input as {
+		"subject": {"tenant_id": "t1", "scope": "analysis", "role": "api"},
+		"resource": {"tenant_id": "t1", "task_type": "code_execution"},
+		"action": "executor.execute",
+		"context": {"network_enabled": false},
+	} with data.ai.policy.risk_score as 0
+	result.decision == "deny"
+	not result.allow
+	result.risk_score == 0
+	result.reasons == ["missing_tenancy"]
+}
+
+test_authz_deny_tenant_mismatch if {
+	result := data.ai.policy.result with input as {
+		"subject": {"tenant_id": "t1", "scope": "analysis", "role": "api"},
+		"resource": {"tenant_id": "t2", "scope": "analysis", "task_type": "code_execution"},
+		"action": "executor.execute",
+		"context": {"network_enabled": false},
+	} with data.ai.policy.risk_score as 0
+	result.decision == "deny"
+	not result.allow
+	result.risk_score == 0
+	result.reasons == ["tenant_mismatch"]
+}
+
 test_authz_deny_network_not_allowed if {
 	result := data.ai.policy.result with input as {
 		"subject": {"tenant_id": "t1", "scope": "analysis", "role": "api"},

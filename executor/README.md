@@ -397,8 +397,8 @@ sudo netstat -tlnp | grep 8080
 curl -X POST http://localhost:8080/execute \
   -H "Content-Type: application/json" \
   -H "X-API-Key: change-me" \
+  -H "X-Authenticated-Tenant-Id: t1" \
   -d '{
-    "tenant_id": "t1",
     "scope": "test",
     "code": "...",
     "timeout": 120
@@ -414,8 +414,8 @@ curl -X POST http://localhost:8080/execute \
 curl -X POST http://localhost:8080/execute \
   -H "Content-Type: application/json" \
   -H "X-API-Key: change-me" \
+  -H "X-Authenticated-Tenant-Id: t1" \
   -d '{
-    "tenant_id": "t1",
     "scope": "test",
     "code": "...",
     "template": "python-ml"

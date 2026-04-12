@@ -488,7 +488,10 @@ def test_options_echoes_request_id_header():
     assert status == 200
     assert headers["X-Request-ID"] == "opt-req-1"
     assert headers["Access-Control-Allow-Origin"] == "https://console.example.com"
-    assert headers["Access-Control-Allow-Headers"] == "Content-Type, X-API-Key, X-Request-ID"
+    assert (
+        headers["Access-Control-Allow-Headers"]
+        == "Content-Type, X-API-Key, X-Request-ID, X-Authenticated-Tenant-Id"
+    )
 
 
 def test_execute_missing_fields_returns_error():

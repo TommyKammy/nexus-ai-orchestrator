@@ -4,7 +4,7 @@ import threading
 from http.server import HTTPServer
 from unittest.mock import patch
 
-from executor.api_server import ExecutorHandler
+from executor.api_server import AUTHENTICATED_TENANT_HEADER, ExecutorHandler
 from executor.session import SessionManager
 
 
@@ -58,9 +58,12 @@ def _start_server():
     return server, thread
 
 
-def _post_json(port: int, path: str, payload: dict):
+def _post_json(port: int, path: str, payload: dict, headers: dict | None = None):
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
-    conn.request("POST", path, body=json.dumps(payload), headers={"Content-Type": "application/json"})
+    request_headers = {"Content-Type": "application/json"}
+    if headers:
+        request_headers.update(headers)
+    conn.request("POST", path, body=json.dumps(payload), headers=request_headers)
     response = conn.getresponse()
     body = response.read().decode("utf-8")
     conn.close()
@@ -321,6 +324,53 @@ def test_session_execute_rejects_authenticated_tenant_mismatch_against_session()
         evaluate_mock.assert_not_called()
     finally:
         manager.stop()
+
+
+def test_session_execute_requires_authenticated_tenant_before_session_lookup():
+    with patch("executor.api_server.API_KEY", "secret-key"), patch(
+        "executor.api_server.session_manager.get_session"
+    ) as get_session_mock:
+        server, thread = _start_server()
+        try:
+            status, payload = _post_json(
+                server.server_port,
+                "/session/execute",
+                {"session_id": "missing-session", "code": "print('ok')", "language": "python"},
+                {"X-API-Key": "secret-key"},
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    assert status == 403
+    assert AUTHENTICATED_TENANT_HEADER.lower() in payload["error"].lower()
+    get_session_mock.assert_not_called()
+
+
+def test_session_destroy_requires_authenticated_tenant_before_session_lookup():
+    with patch("executor.api_server.API_KEY", "secret-key"), patch(
+        "executor.api_server.session_manager.get_session"
+    ) as get_session_mock, patch(
+        "executor.api_server.session_manager.destroy_session"
+    ) as destroy_session_mock:
+        server, thread = _start_server()
+        try:
+            status, payload = _post_json(
+                server.server_port,
+                "/session/destroy",
+                {"session_id": "missing-session"},
+                {"X-API-Key": "secret-key"},
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    assert status == 403
+    assert AUTHENTICATED_TENANT_HEADER.lower() in payload["error"].lower()
+    get_session_mock.assert_not_called()
+    destroy_session_mock.assert_not_called()
 
 
 def test_session_execute_denies_when_session_tenancy_metadata_is_not_string():

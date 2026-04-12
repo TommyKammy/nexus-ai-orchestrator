@@ -64,6 +64,7 @@ REQUEST_METRICS = {
 }
 REQUEST_METRIC_EXCLUDE_PATHS = {"/metrics", "/metrics/prometheus", "/health"}
 AUTHENTICATED_TENANT_HEADER = "X-Authenticated-Tenant-Id"
+CORS_ALLOWED_HEADERS = f"Content-Type, X-API-Key, X-Request-ID, {AUTHENTICATED_TENANT_HEADER}"
 PROTECTED_TENANCY_ACTIONS = frozenset(
     {
         "executor.execute",
@@ -480,7 +481,7 @@ class ExecutorHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header('Access-Control-Allow-Origin', origin)
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type, X-API-Key, X-Request-ID')
+        self.send_header('Access-Control-Allow-Headers', CORS_ALLOWED_HEADERS)
         self.send_header('Vary', 'Origin')
         self.send_header("X-Request-ID", self.request_id)
         self._send_security_headers()
@@ -623,6 +624,15 @@ class ExecutorHandler(BaseHTTPRequestHandler):
         tenant_id = raw_value.strip()
         return tenant_id or None
 
+    def _require_authenticated_tenant_context(self, action: str) -> Optional[str]:
+        authenticated_tenant_id = self._get_authenticated_tenant_id()
+        if action in PROTECTED_TENANCY_ACTIONS and API_KEY and authenticated_tenant_id is None:
+            raise RequestValidationError(
+                f"Authenticated tenant context required for {action}: missing {AUTHENTICATED_TENANT_HEADER}",
+                status=403,
+            )
+        return authenticated_tenant_id
+
     def _resolve_protected_tenant_id(
         self,
         action: str,
@@ -630,7 +640,7 @@ class ExecutorHandler(BaseHTTPRequestHandler):
         field: str = "tenant_id",
     ) -> str:
         request_tenant_id = body.get(field)
-        authenticated_tenant_id = self._get_authenticated_tenant_id()
+        authenticated_tenant_id = self._require_authenticated_tenant_context(action)
 
         if authenticated_tenant_id is not None:
             if request_tenant_id is None:
@@ -644,15 +654,11 @@ class ExecutorHandler(BaseHTTPRequestHandler):
                 )
             return authenticated_tenant_id
 
-        if action in PROTECTED_TENANCY_ACTIONS and API_KEY:
-            raise RequestValidationError(
-                f"Authenticated tenant context required for {action}: missing {AUTHENTICATED_TENANT_HEADER}",
-                status=403,
-            )
-
         return self._require_string_field(body, field)
 
     def _bind_session_tenant_to_authenticated_caller(self, action: str, tenant_id: Any) -> str:
+        authenticated_tenant_id = self._require_authenticated_tenant_context(action)
+
         if not isinstance(tenant_id, str) or not tenant_id.strip():
             raise RequestValidationError(
                 f"Invalid tenancy context for {action}: missing required fields subject.tenant_id, resource.tenant_id",
@@ -660,15 +666,9 @@ class ExecutorHandler(BaseHTTPRequestHandler):
             )
 
         normalized_tenant_id = tenant_id.strip()
-        authenticated_tenant_id = self._get_authenticated_tenant_id()
         if authenticated_tenant_id is not None and authenticated_tenant_id != normalized_tenant_id:
             raise RequestValidationError(
                 f"Invalid tenancy context for {action}: tenant_id mismatch",
-                status=403,
-            )
-        if action in PROTECTED_TENANCY_ACTIONS and API_KEY and authenticated_tenant_id is None:
-            raise RequestValidationError(
-                f"Authenticated tenant context required for {action}: missing {AUTHENTICATED_TENANT_HEADER}",
                 status=403,
             )
         return normalized_tenant_id
@@ -928,6 +928,7 @@ class ExecutorHandler(BaseHTTPRequestHandler):
         """Handle session destruction."""
         self._require_fields_present(body, 'session_id')
         session_id = self._require_string_field(body, 'session_id')
+        self._require_authenticated_tenant_context("executor.session.destroy")
 
         session = session_manager.get_session(session_id)
         if session is not None:
@@ -961,6 +962,7 @@ class ExecutorHandler(BaseHTTPRequestHandler):
         code = self._require_string_field(body, 'code')
         language = self._optional_string_field(body, 'language', 'python')
         files = self._optional_string_map_field(body, 'files')
+        self._require_authenticated_tenant_context("executor.session.execute")
 
         session = session_manager.get_session(session_id)
         if session is None:

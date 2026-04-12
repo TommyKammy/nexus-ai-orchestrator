@@ -110,20 +110,30 @@ class TenantWorkflowServiceBoundaryTests(unittest.TestCase):
         self.assertEqual(errors, [])
 
     def test_shell_wrapper_resolves_repo_root_from_another_working_directory(self):
+        repo_root = Path(__file__).resolve().parents[1]
         outside_dir = Path(tempfile.mkdtemp(prefix="tenant-workflow-boundary-cwd-"))
         self.addCleanup(shutil.rmtree, outside_dir, ignore_errors=True)
+        bash_path = shutil.which("bash")
+        self.assertIsNotNone(bash_path)
 
-        result = subprocess.run(
-            ["bash", str(WRAPPER_PATH)],
+        from_repo_root = subprocess.run(
+            [bash_path, str(WRAPPER_PATH)],  # noqa: S603
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        from_outside = subprocess.run(
+            [bash_path, str(WRAPPER_PATH)],  # noqa: S603
             cwd=outside_dir,
             capture_output=True,
             text=True,
             check=False,
         )
 
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("Tenant workflow service-boundary check FAILED", result.stdout)
-        self.assertEqual(result.stderr, "")
+        self.assertEqual(from_outside.returncode, from_repo_root.returncode)
+        self.assertEqual(from_outside.stdout, from_repo_root.stdout)
+        self.assertEqual(from_outside.stderr, from_repo_root.stderr)
 
 
 if __name__ == "__main__":

@@ -56,7 +56,7 @@ if [[ "$insert_node_is_service_boundary" == "true" ]]; then
     echo "Insert Approval Audit must source X-API-Key from workflow environment in ${workflow_path}" >&2
     exit 1
   fi
-  for pattern in "payload_jsonb" "request_id" "policy_id" "policy_version" "risk_score" "approval" "policy"; do
+  for pattern in "actor" "action" "target" "decision" "payload_jsonb" "request_id" "policy_id" "policy_version" "risk_score" "approval" "policy"; do
     if ! grep -Fq "$pattern" <<<"$insert_body"; then
       echo "Insert Approval Audit request body is missing '${pattern}' in ${workflow_path}" >&2
       exit 1

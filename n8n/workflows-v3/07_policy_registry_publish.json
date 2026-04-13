@@ -90,69 +90,87 @@
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "WITH payload AS ( SELECT COALESCE(jsonb_agg(jsonb_build_object('workflow_id', workflow_id,'task_type', task_type,'tenant_id', tenant_id,'scope_pattern', scope_pattern,'constraints', constraints_jsonb,'enabled', enabled)), '[]'::jsonb) AS workflows FROM policy_workflows ), upserted AS ( INSERT INTO policy_revisions (revision_id, status, payload_jsonb, notes, author, is_active, published_at) SELECT $1, 'published', jsonb_build_object('workflows', payload.workflows), $2, $3, true, NOW() FROM payload ON CONFLICT (revision_id) DO UPDATE SET status='published', payload_jsonb=EXCLUDED.payload_jsonb, notes=EXCLUDED.notes, author=EXCLUDED.author, is_active=true, published_at=NOW() RETURNING revision_id ), deactivated AS ( UPDATE policy_revisions SET is_active=false WHERE revision_id <> $4 RETURNING revision_id ) SELECT upserted.revision_id, COALESCE((SELECT count(*) FROM deactivated), 0) AS deactivated_count FROM upserted;",
-        "additionalFields": {
-          "queryReplacement": "={{ [\n  $json.revision_id,\n  $json.notes,\n  $json.actor,\n  $json.revision_id\n] }}"
+        "method": "POST",
+        "url": "http://policy-bundle-server:8088/internal/tenant-data/policy/revision/publish",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ revision_id: $json.revision_id, notes: $json.notes, actor: $json.actor }) }}",
+        "options": {
+          "timeout": 30000
         }
       },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         730,
         300
       ],
-      "name": "Publish Revision",
-      "credentials": {
-        "postgres": {
-          "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-          "name": "ai-postgres"
-        }
-      }
+      "name": "Publish Revision"
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "INSERT INTO policy_publish_logs (revision_id, action, actor, result, details_jsonb) VALUES ($1, 'publish', $2, 'ok', $3::jsonb);",
-        "additionalFields": {
-          "queryReplacement": "={{ [\n  $('Build Publish Payload').first().json.revision_id,\n  $('Build Publish Payload').first().json.actor,\n  JSON.stringify({ notes: $('Build Publish Payload').first().json.notes })\n] }}"
+        "method": "POST",
+        "url": "http://policy-bundle-server:8088/internal/tenant-data/policy/publish-log",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ revision_id: $('Build Publish Payload').first().json.revision_id, action: 'publish', actor: $('Build Publish Payload').first().json.actor, result: 'ok', details_jsonb: { notes: $('Build Publish Payload').first().json.notes } }) }}",
+        "options": {
+          "timeout": 30000
         }
       },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         980,
         300
       ],
-      "name": "Insert Publish Log",
-      "credentials": {
-        "postgres": {
-          "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-          "name": "ai-postgres"
-        }
-      }
+      "name": "Insert Publish Log"
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "SELECT payload_jsonb FROM policy_revisions WHERE revision_id=$1 LIMIT 1;",
-        "additionalFields": {
-          "queryReplacement": "={{ [\n  $('Build Publish Payload').first().json.revision_id\n] }}"
+        "method": "POST",
+        "url": "http://policy-bundle-server:8088/internal/tenant-data/policy/revision/payload",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ revision_id: $('Build Publish Payload').first().json.revision_id }) }}",
+        "options": {
+          "timeout": 30000
         }
       },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         1210,
         300
       ],
-      "name": "Load Published Payload",
-      "credentials": {
-        "postgres": {
-          "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-          "name": "ai-postgres"
-        }
-      }
+      "name": "Load Published Payload"
     },
     {
       "parameters": {

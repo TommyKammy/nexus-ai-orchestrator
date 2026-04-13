@@ -153,25 +153,31 @@
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "INSERT INTO memory_facts (subject, predicate, object, confidence)\nSELECT fact.subject, fact.predicate, fact.object, fact.confidence\nFROM unnest($1::text[], $2::text[], $3::text[], $4::double precision[]) AS fact(subject, predicate, object, confidence);",
-        "additionalFields": {
-          "queryReplacement": "={{ [\n  ($input.first().json.facts || []).map(f => String(f.subject || '')),\n  ($input.first().json.facts || []).map(f => String(f.predicate || '')),\n  ($input.first().json.facts || []).map(f => String(f.object || '')),\n  ($input.first().json.facts || []).map(f => Number.isFinite(Number(f.confidence)) ? Number(f.confidence) : 0)\n] }}"
+        "method": "POST",
+        "url": "http://policy-bundle-server:8088/internal/tenant-data/memory/facts",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ facts: $input.first().json.facts || [] }) }}",
+        "options": {
+          "timeout": 30000
         }
       },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         1250,
         400
       ],
-      "name": "Insert Facts",
-      "credentials": {
-        "postgres": {
-          "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-          "name": "ai-postgres"
-        }
-      }
+      "name": "Insert Facts"
     },
     {
       "parameters": {
@@ -217,25 +223,35 @@
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "WITH tenant_context AS (SELECT set_config('app.current_tenant_id', $1, true) AS tenant_ctx)\nINSERT INTO memory_vectors (\n  tenant_id,\n  scope,\n  content,\n  embedding,\n  tags,\n  source,\n  content_hash,\n  metadata_jsonb,\n  created_at\n)\nSELECT\n  $1,\n  $2,\n  $3,\n  $4::vector,\n  $5::jsonb,\n  $6,\n  $7,\n  $8::jsonb,\n  NOW()\nFROM tenant_context\nON CONFLICT (tenant_id, scope, content_hash)\nWHERE content_hash IS NOT NULL\nDO UPDATE SET\n  content = EXCLUDED.content,\n  embedding = EXCLUDED.embedding,\n  tags = EXCLUDED.tags,\n  source = EXCLUDED.source,\n  metadata_jsonb = EXCLUDED.metadata_jsonb\nRETURNING id, content_hash;",
-        "additionalFields": {
-          "queryReplacement": "={{ [\n  $input.first().json.tenant_id,\n  $input.first().json.scope,\n  $input.first().json.text,\n  $input.first().json.embedding,\n  JSON.stringify($input.first().json.tags || []),\n  String($input.first().json.source || 'unknown'),\n  $input.first().json.content_hash,\n  JSON.stringify({\n    request_id: $input.first().json.request_id || null,\n    source: $input.first().json.source || 'unknown',\n    tags: $input.first().json.tags || [],\n    facts_count: Array.isArray($input.first().json.facts) ? $input.first().json.facts.length : 0,\n    metadata: $input.first().json.metadata || {},\n    policy: $input.first().json.policy || {}\n  })\n] }}"
+        "method": "POST",
+        "url": "http://policy-bundle-server:8088/internal/tenant-data/memory/vector",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Authenticated-Tenant-Id",
+              "value": "={{ $input.first().json.tenant_id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ tenant_id: $input.first().json.tenant_id, scope: $input.first().json.scope, text: $input.first().json.text, embedding: $input.first().json.embedding, tags: $input.first().json.tags || [], source: String($input.first().json.source || 'unknown'), content_hash: $input.first().json.content_hash, metadata_jsonb: { request_id: $input.first().json.request_id || null, source: $input.first().json.source || 'unknown', tags: $input.first().json.tags || [], facts_count: Array.isArray($input.first().json.facts) ? $input.first().json.facts.length : 0, metadata: $input.first().json.metadata || {}, policy: $input.first().json.policy || {} } }) }}",
+        "options": {
+          "timeout": 30000
         }
       },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         1850,
         400
       ],
-      "name": "Insert Vector",
-      "credentials": {
-        "postgres": {
-          "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-          "name": "ai-postgres"
-        }
-      }
+      "name": "Insert Vector"
     },
     {
       "parameters": {
@@ -251,25 +267,35 @@
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "INSERT INTO audit_events (actor, action, target, decision, payload_jsonb, created_at)\nVALUES ($1, $2, $3, $4, $5::jsonb, NOW());",
-        "additionalFields": {
-          "queryReplacement": "={{ [\n  'workflow:memory_ingest',\n  'memory_write',\n  $input.first().json.scope,\n  $input.first().json.policy?.decision || 'allow',\n  JSON.stringify({\n    request_id: $input.first().json.request_id || '',\n    policy: $input.first().json.policy || {}\n  })\n] }}"
+        "method": "POST",
+        "url": "http://policy-bundle-server:8088/internal/tenant-data/audit/event",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Authenticated-Tenant-Id",
+              "value": "={{ $input.first().json.tenant_id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ actor: 'workflow:memory_ingest', action: 'memory_write', target: $input.first().json.scope, decision: $input.first().json.policy?.decision || 'allow', payload_jsonb: { tenant_id: $input.first().json.tenant_id, request_id: $input.first().json.request_id || '', policy: $input.first().json.policy || {} } }) }}",
+        "options": {
+          "timeout": 30000
         }
       },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         2150,
         400
       ],
-      "name": "Insert Audit",
-      "credentials": {
-        "postgres": {
-          "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-          "name": "ai-postgres"
-        }
-      }
+      "name": "Insert Audit"
     },
     {
       "parameters": {

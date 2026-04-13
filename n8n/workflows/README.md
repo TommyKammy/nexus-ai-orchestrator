@@ -12,6 +12,15 @@ All non-Slack n8n webhook entry points are expected to enforce the same auth con
 
 Examples in this document use `X-API-Key`, but the edge and workflow auth gates also accept `Authorization: Bearer <key>` for the same shared secret.
 
+## Tenant Data Service Boundary
+
+The guarded tenant-facing workflows under `n8n/workflows-v3/` no longer embed direct `Postgres` nodes for tenant data access.
+
+- Allowed inside guarded n8n workflows: webhook auth, request validation, OPA evaluation, branching, payload shaping, response formatting, and internal HTTP calls to service-owned data endpoints.
+- Must stay behind services: tenant-facing reads/writes for memory vectors, audit events, executor episodes, and policy-registry persistence/query paths.
+- Tenant-facing internal service calls must forward `X-Authenticated-Tenant-Id` when the payload carries a concrete `tenant_id`; the service rejects missing or conflicting tenant identity on protected paths.
+- Legacy workflows under `n8n/workflows/` may still contain direct SQL while migration guardrails remain in place, but new tenant-facing access patterns should follow the v3 service-boundary model.
+
 ## Workflows
 
 ### 01_memory_ingest.json
@@ -39,7 +48,7 @@ Examples in this document use `X-API-Key`, but the edge and workflow auth gates 
 - Rejects content with API keys, bearer tokens, or private keys
 - Empty subject/predicate/object fields are rejected
 
-**Output:** Data stored in `memory_facts`, `memory_vectors`, and `audit_events` tables
+**Output:** Orchestrates internal service writes for `memory_facts`, `memory_vectors`, and `audit_events`
 
 ---
 
@@ -61,7 +70,7 @@ Examples in this document use `X-API-Key`, but the edge and workflow auth gates 
 **Behavior:**
 - Evaluates policy before embedding lookup, vector search, and audit side effects proceed
 - Returns deny / requires-approval responses with policy metadata when access is blocked
-- Generates the query embedding, performs pgvector cosine search, and appends an audit event only for authorized requests
+- Generates the query embedding, calls the internal memory search service, and appends an audit event only for authorized requests
 
 **Output:** Search results returned with ranking metadata, `request_id`, and policy context
 
@@ -98,7 +107,7 @@ Examples in this document use `X-API-Key`, but the edge and workflow auth gates 
 - Returns deny / requires-approval responses instead of inserting rows when policy blocks the request
 - Persists the audit row only after an `allow` decision
 
-**Output:** Record stored in `audit_events` with policy metadata and `payload_jsonb`
+**Output:** Record appended through the internal audit service with policy metadata and `payload_jsonb`
 
 ---
 
@@ -120,7 +129,7 @@ Examples in this document use `X-API-Key`, but the edge and workflow auth gates 
 - Validates request payload
 - Evaluates `executor.execute` policy via OPA
 - Returns deny/approval-required responses when policy blocks execution
-- Proceeds to execution flow and stores episode/audit records when policy allows
+- Proceeds to execution flow and stores episode/audit records through internal service boundaries when policy allows
 
 **Output:** Structured success/error response with `request_id`, execution output, and policy metadata
 

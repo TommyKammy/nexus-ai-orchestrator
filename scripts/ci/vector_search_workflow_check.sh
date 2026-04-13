@@ -42,10 +42,17 @@ check_workflow() {
   local parse_to_audit
   local search_to_audit
   local search_query
+  local search_url
+  local search_headers
+  local search_body
   local search_replacement
   local audit_query
+  local audit_url
+  local audit_headers
+  local audit_body
   local audit_replacement
   local response_code
+  local is_service_boundary
 
   for node_name in "${required_nodes[@]}"; do
     if ! jq -e --arg node_name "$node_name" '.nodes[] | select(.name == $node_name)' "$workflow_path" >/dev/null; then
@@ -64,9 +71,16 @@ check_workflow() {
   parse_to_search="$(jq -r '.connections["Parse Embedding"].main[0] | any(.node == "Search Vectors")' "$workflow_path")"
   parse_to_audit="$(jq -r '.connections["Parse Embedding"].main[0] | any(.node == "Insert Audit")' "$workflow_path")"
   search_to_audit="$(jq -r '.connections["Search Vectors"].main[0] | any(.node == "Insert Audit")' "$workflow_path")"
+  is_service_boundary="$(jq -r '.nodes[] | select(.name == "Search Vectors") | .type == "n8n-nodes-base.httpRequest"' "$workflow_path")"
   search_query="$(jq -r '.nodes[] | select(.name == "Search Vectors") | .parameters.query' "$workflow_path")"
+  search_url="$(jq -r '.nodes[] | select(.name == "Search Vectors") | .parameters.url' "$workflow_path")"
+  search_headers="$(jq -c '.nodes[] | select(.name == "Search Vectors") | .parameters.headerParameters.parameters // []' "$workflow_path")"
+  search_body="$(jq -r '.nodes[] | select(.name == "Search Vectors") | .parameters.jsonBody' "$workflow_path")"
   search_replacement="$(jq -r '.nodes[] | select(.name == "Search Vectors") | .parameters.additionalFields.queryReplacement' "$workflow_path")"
   audit_query="$(jq -r '.nodes[] | select(.name == "Insert Audit") | .parameters.query' "$workflow_path")"
+  audit_url="$(jq -r '.nodes[] | select(.name == "Insert Audit") | .parameters.url' "$workflow_path")"
+  audit_headers="$(jq -c '.nodes[] | select(.name == "Insert Audit") | .parameters.headerParameters.parameters // []' "$workflow_path")"
+  audit_body="$(jq -r '.nodes[] | select(.name == "Insert Audit") | .parameters.jsonBody' "$workflow_path")"
   audit_replacement="$(jq -r '.nodes[] | select(.name == "Insert Audit") | .parameters.additionalFields.queryReplacement' "$workflow_path")"
   response_code="$(jq -r '.nodes[] | select(.name == "Success Response") | .parameters.jsCode' "$workflow_path")"
 
@@ -102,27 +116,59 @@ check_workflow() {
     fi
   done
 
-  for pattern in "${search_patterns[@]}"; do
-    if ! grep -Fq "$pattern" <<< "$search_query"; then
-      echo "Missing '${pattern}' in Search Vectors query for ${workflow_path}" >&2
+  if [[ "$is_service_boundary" == "true" ]]; then
+    if [[ "$search_url" != "http://policy-bundle-server:8088/internal/tenant-data/memory/search" ]]; then
+      echo "Search Vectors must call the memory search service in ${workflow_path}" >&2
       exit 1
     fi
-  done
-
-  if [[ -z "$search_replacement" || "$search_replacement" == "null" ]]; then
-    echo "Missing Search Vectors queryReplacement for ${workflow_path}" >&2
-    exit 1
-  fi
-
-  for pattern in '$1' '$8'; do
-    if ! grep -Fq "$pattern" <<< "$audit_query"; then
-      echo "Insert Audit query must remain parameterized in ${workflow_path}" >&2
+    if ! grep -Fq "X-Authenticated-Tenant-Id" <<<"$search_headers"; then
+      echo "Search Vectors must forward X-Authenticated-Tenant-Id in ${workflow_path}" >&2
       exit 1
     fi
-  done
-  if [[ -z "$audit_replacement" || "$audit_replacement" == "null" ]]; then
-    echo "Missing Insert Audit queryReplacement for ${workflow_path}" >&2
-    exit 1
+    for pattern in "embedding" "tenant_id" "scope"; do
+      if ! grep -Fq "$pattern" <<<"$search_body"; then
+        echo "Search Vectors request body is missing '${pattern}' in ${workflow_path}" >&2
+        exit 1
+      fi
+    done
+
+    if [[ "$audit_url" != "http://policy-bundle-server:8088/internal/tenant-data/audit/event" ]]; then
+      echo "Insert Audit must call the audit service in ${workflow_path}" >&2
+      exit 1
+    fi
+    if ! grep -Fq "X-Authenticated-Tenant-Id" <<<"$audit_headers"; then
+      echo "Insert Audit must forward X-Authenticated-Tenant-Id in ${workflow_path}" >&2
+      exit 1
+    fi
+    for pattern in "tenant_id" "policy" "request_id"; do
+      if ! grep -Fq "$pattern" <<<"$audit_body"; then
+        echo "Insert Audit request body is missing '${pattern}' in ${workflow_path}" >&2
+        exit 1
+      fi
+    done
+  else
+    for pattern in "${search_patterns[@]}"; do
+      if ! grep -Fq "$pattern" <<< "$search_query"; then
+        echo "Missing '${pattern}' in Search Vectors query for ${workflow_path}" >&2
+        exit 1
+      fi
+    done
+
+    if [[ -z "$search_replacement" || "$search_replacement" == "null" ]]; then
+      echo "Missing Search Vectors queryReplacement for ${workflow_path}" >&2
+      exit 1
+    fi
+
+    for pattern in '$1' '$8'; do
+      if ! grep -Fq "$pattern" <<< "$audit_query"; then
+        echo "Insert Audit query must remain parameterized in ${workflow_path}" >&2
+        exit 1
+      fi
+    done
+    if [[ -z "$audit_replacement" || "$audit_replacement" == "null" ]]; then
+      echo "Missing Insert Audit queryReplacement for ${workflow_path}" >&2
+      exit 1
+    fi
   fi
 
   for pattern in "${response_patterns[@]}"; do

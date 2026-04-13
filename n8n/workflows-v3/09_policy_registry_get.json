@@ -120,30 +120,36 @@
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "SELECT workflow_id, task_type, tenant_id, scope_pattern, constraints_jsonb, enabled, created_at, updated_at FROM policy_workflows WHERE workflow_id=$1 AND task_type=$2 ORDER BY updated_at DESC LIMIT 1;",
-        "additionalFields": {
-          "queryReplacement": "={{ [\n  $json.workflow_id,\n  $json.task_type\n] }}"
+        "method": "POST",
+        "url": "http://policy-bundle-server:8088/internal/tenant-data/policy/workflow/get",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ workflow_id: $json.workflow_id, task_type: $json.task_type }) }}",
+        "options": {
+          "timeout": 30000
         }
       },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         900,
         360
       ],
-      "name": "Get Workflow Rule",
-      "credentials": {
-        "postgres": {
-          "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-          "name": "ai-postgres"
-        }
-      }
+      "name": "Get Workflow Rule"
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ ({ status: 'ok', item: $input.first().json || null }) }}"
+        "responseBody": "={{ (() => { const result = $('Get Workflow Rule').first().json || {}; return { status: 'ok', item: result.item ?? result ?? null }; })() }}"
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,

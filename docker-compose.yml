@@ -197,6 +197,11 @@ services:
       N8N_INTERNAL_BASE_URL: http://n8n:5678
       BUNDLE_SERVER_HOST: 0.0.0.0
       BUNDLE_SERVER_PORT: 8088
+      POLICY_REGISTRY_DB_HOST: ${POLICY_REGISTRY_DB_HOST:-postgres}
+      POLICY_REGISTRY_DB_PORT: ${POLICY_REGISTRY_DB_PORT:-5432}
+      POLICY_REGISTRY_DB_NAME: ${POLICY_REGISTRY_DB_NAME:-ai_memory}
+      POLICY_REGISTRY_DB_USER: ${POLICY_REGISTRY_DB_USER:-ai_user}
+      POLICY_REGISTRY_DB_PASSWORD: ${POLICY_REGISTRY_DB_PASSWORD:-${POSTGRES_PASSWORD}}
     volumes:
       - ./policy/opa:/policy-source:ro
       - ./policy/runtime:/policy-runtime

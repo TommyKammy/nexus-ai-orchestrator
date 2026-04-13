@@ -306,47 +306,67 @@
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "WITH tenant_context AS (SELECT set_config('app.current_tenant_id', $1, true) AS tenant_ctx)\nINSERT INTO memory_episodes (\n  tenant_id,\n  scope,\n  summary,\n  outcome,\n  started_at,\n  ended_at,\n  metadata_jsonb\n)\nSELECT\n  $1,\n  $2,\n  'executor task executed',\n  $3,\n  NOW(),\n  NOW(),\n  $4::jsonb\nFROM tenant_context;",
-        "additionalFields": {
-          "queryReplacement": "={{ [\n  $('Finalize Success Payload').first().json.tenant_id,\n  $('Finalize Success Payload').first().json.scope,\n  $('Finalize Success Payload').first().json.outcome,\n  JSON.stringify($('Finalize Success Payload').first().json.output || {})\n] }}"
+        "method": "POST",
+        "url": "http://policy-bundle-server:8088/internal/tenant-data/memory/episode",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Authenticated-Tenant-Id",
+              "value": "={{ $('Finalize Success Payload').first().json.tenant_id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ tenant_id: $('Finalize Success Payload').first().json.tenant_id, scope: $('Finalize Success Payload').first().json.scope, outcome: $('Finalize Success Payload').first().json.outcome, metadata_jsonb: $('Finalize Success Payload').first().json.output || {} }) }}",
+        "options": {
+          "timeout": 30000
         }
       },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         1250,
         400
       ],
-      "name": "Insert Episode",
-      "credentials": {
-        "postgres": {
-          "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-          "name": "ai-postgres"
-        }
-      }
+      "name": "Insert Episode"
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "INSERT INTO audit_events (\n  actor,\n  action,\n  target,\n  decision,\n  payload_jsonb,\n  request_id,\n  policy_id,\n  policy_version,\n  policy_reason,\n  risk_score,\n  created_at\n)\nVALUES (\n  'workflow:executor_dispatch',\n  'executor_run',\n  $1,\n  $2,\n  $3::jsonb,\n  $4,\n  $5,\n  $6,\n  $7,\n  $8,\n  NOW()\n);",
-        "additionalFields": {
-          "queryReplacement": "={{ [\n  $('Finalize Success Payload').first().json.scope,\n  $('Finalize Success Payload').first().json.policy?.decision || 'allowed',\n  JSON.stringify({\n    request_id: $('Finalize Success Payload').first().json.request_id || '',\n    policy: $('Finalize Success Payload').first().json.policy || {}\n  }),\n  $('Finalize Success Payload').first().json.request_id || null,\n  $('Finalize Success Payload').first().json.policy?.policy_id || null,\n  $('Finalize Success Payload').first().json.policy?.policy_version || null,\n  Array.isArray($('Finalize Success Payload').first().json.policy?.reasons)\n    ? $('Finalize Success Payload').first().json.policy.reasons.join('; ')\n    : null,\n  Number.isFinite(Number($('Finalize Success Payload').first().json.policy?.risk_score))\n    ? Math.round(Number($('Finalize Success Payload').first().json.policy.risk_score))\n    : null\n] }}"
+        "method": "POST",
+        "url": "http://policy-bundle-server:8088/internal/tenant-data/audit/event",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Authenticated-Tenant-Id",
+              "value": "={{ $('Finalize Success Payload').first().json.tenant_id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ actor: 'workflow:executor_dispatch', action: 'executor_run', target: $('Finalize Success Payload').first().json.scope, decision: $('Finalize Success Payload').first().json.policy?.decision || 'allowed', payload_jsonb: { tenant_id: $('Finalize Success Payload').first().json.tenant_id, request_id: $('Finalize Success Payload').first().json.request_id || '', policy: $('Finalize Success Payload').first().json.policy || {} }, request_id: $('Finalize Success Payload').first().json.request_id || null, policy_id: $('Finalize Success Payload').first().json.policy?.policy_id || null, policy_version: $('Finalize Success Payload').first().json.policy?.policy_version || null, policy_reason: Array.isArray($('Finalize Success Payload').first().json.policy?.reasons) ? $('Finalize Success Payload').first().json.policy.reasons.join('; ') : null, risk_score: Number.isFinite(Number($('Finalize Success Payload').first().json.policy?.risk_score)) ? Math.round(Number($('Finalize Success Payload').first().json.policy.risk_score)) : null }) }}",
+        "options": {
+          "timeout": 30000
         }
       },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         1450,
         400
       ],
-      "name": "Insert Audit",
-      "credentials": {
-        "postgres": {
-          "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-          "name": "ai-postgres"
-        }
-      }
+      "name": "Insert Audit"
     },
     {
       "parameters": {

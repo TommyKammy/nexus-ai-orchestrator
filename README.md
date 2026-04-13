@@ -6,6 +6,7 @@ Secure AI orchestration infrastructure with n8n workflows, policy evaluation, se
 
 - Workflow orchestration with `n8n`
 - Semantic memory and audit persistence on PostgreSQL + pgvector
+- Internal tenant data service boundaries on `policy-bundle-server` for guarded n8n workflows
 - Policy decision point with OPA
 - Redis-backed state/cache
 - Hardened edge routing with Caddy
@@ -66,6 +67,8 @@ Reference: `.env.example`
 For the current n8n webhook auth design, keep `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` on the `n8n` service so the shared `Code` nodes can read `$env.N8N_WEBHOOK_API_KEY`. This is a temporary exception: it exposes container environment variables to editable `Code` nodes, so restrict workflow edit access and treat `SECURITY.md` as the operator runbook until the auth gate moves off `$env` and this override can be removed.
 
 Policy enforcement defaults to `POLICY_MODE=enforce` and `POLICY_FAIL_MODE=closed`. Development-only advisory or fail-open overrides require explicit `POLICY_ALLOW_UNSAFE=true`.
+
+Guarded tenant-facing workflows in `n8n/workflows-v3/` now keep orchestration, policy evaluation, and response shaping inside n8n, but route tenant-facing persistence and reads through internal `policy-bundle-server` HTTP endpoints instead of direct `Postgres` nodes.
 
 ## Common Commands
 

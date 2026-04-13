@@ -59,6 +59,47 @@ class MemoryIngestWorkflowCheckTests(unittest.TestCase):
             "parameters": parameters or {},
         }
 
+    def _http_node(self, name: str, url: str, json_body: str, include_tenant_header: bool = False) -> dict:
+        headers = [{"name": "Content-Type", "value": "application/json"}]
+        if include_tenant_header:
+            headers.append({"name": "X-Authenticated-Tenant-Id", "value": "={{ $json.tenant_id }}"})
+
+        return {
+            "name": name,
+            "type": "n8n-nodes-base.httpRequest",
+            "parameters": {
+                "method": "POST",
+                "url": url,
+                "sendHeaders": True,
+                "headerParameters": {"parameters": headers},
+                "sendBody": True,
+                "specifyBody": "json",
+                "jsonBody": json_body,
+                "options": {"timeout": 30000},
+            },
+        }
+
+    def _v3_service_boundary_nodes(self) -> list[dict]:
+        return [
+            self._http_node(
+                "Insert Facts",
+                "http://policy-bundle-server:8088/internal/tenant-data/memory/facts",
+                "={{ JSON.stringify({ facts: $json.facts || [] }) }}",
+            ),
+            self._http_node(
+                "Insert Vector",
+                "http://policy-bundle-server:8088/internal/tenant-data/memory/vector",
+                "={{ JSON.stringify({ tenant_id: $json.tenant_id, scope: $json.scope, content_hash: $json.content_hash, metadata_jsonb: { policy: $json.policy || {} } }) }}",
+                include_tenant_header=True,
+            ),
+            self._http_node(
+                "Insert Audit",
+                "http://policy-bundle-server:8088/internal/tenant-data/audit/event",
+                "={{ JSON.stringify({ payload_jsonb: { tenant_id: $json.tenant_id, policy: $json.policy || {} } }) }}",
+                include_tenant_header=True,
+            ),
+        ]
+
     def _run_check(self, repo_root: Path) -> subprocess.CompletedProcess[str]:
         bash_path = shutil.which("bash")
         if bash_path is None:
@@ -115,20 +156,16 @@ class MemoryIngestWorkflowCheckTests(unittest.TestCase):
             "n8n/workflows/01_memory_ingest.json",
             [
                 self._postgres_node("Insert Vector", safe_vector_query, safe_vector_replacement),
-                self._postgres_node("Insert Audit", "SELECT 1;"),
-            ],
-        )
-        self._write_workflow(
-            repo_root,
-            "n8n/workflows-v3/01_memory_ingest.json",
-            [
-                self._postgres_node("Insert Vector", safe_vector_query, safe_vector_replacement),
-                self._postgres_node("Insert Facts", "INSERT INTO memory_facts (subject) VALUES ($1);", "={{ ['value'] }}"),
                 self._postgres_node(
                     "Insert Audit",
                     "INSERT INTO audit_events (target) VALUES ('{{ $json.scope }}');",
                 ),
             ],
+        )
+        self._write_workflow(
+            repo_root,
+            "n8n/workflows-v3/01_memory_ingest.json",
+            self._v3_service_boundary_nodes(),
         )
         self._write_workflow(
             repo_root,
@@ -142,7 +179,7 @@ class MemoryIngestWorkflowCheckTests(unittest.TestCase):
         result = self._run_check(repo_root)
 
         self.assertNotEqual(result.returncode, 0, msg=result.stdout + result.stderr)
-        self.assertIn("n8n/workflows-v3/01_memory_ingest.json", result.stderr)
+        self.assertIn("n8n/workflows/01_memory_ingest.json", result.stderr)
         self.assertIn("Insert Audit", result.stderr)
 
     def test_check_passes_for_parameterized_runtime_queries_and_constant_sql(self):
@@ -205,11 +242,7 @@ class MemoryIngestWorkflowCheckTests(unittest.TestCase):
         self._write_workflow(
             repo_root,
             "n8n/workflows-v3/01_memory_ingest.json",
-            [
-                self._postgres_node("Insert Facts", safe_facts_query, "={{ ['s', 'p', 'o', 0.9] }}"),
-                self._postgres_node("Insert Vector", safe_vector_query, safe_vector_replacement),
-                self._postgres_node("Insert Audit", safe_audit_query, "={{ ['actor', 'action', 'target', 'allow', '{}'] }}"),
-            ],
+            self._v3_service_boundary_nodes(),
         )
         self._write_workflow(
             repo_root,
@@ -277,10 +310,7 @@ class MemoryIngestWorkflowCheckTests(unittest.TestCase):
         self._write_workflow(
             repo_root,
             "n8n/workflows-v3/01_memory_ingest.json",
-            [
-                self._postgres_node("Insert Vector", safe_vector_query, loose_vector_replacement),
-                self._postgres_node("Insert Audit", "SELECT 1;"),
-            ],
+            self._v3_service_boundary_nodes(),
         )
         self._write_workflow(
             repo_root,
@@ -350,10 +380,7 @@ class MemoryIngestWorkflowCheckTests(unittest.TestCase):
         self._write_workflow(
             repo_root,
             "n8n/workflows-v3/01_memory_ingest.json",
-            [
-                self._postgres_node("Insert Vector", safe_vector_query, safe_vector_replacement),
-                self._postgres_node("Insert Audit", "SELECT 1;"),
-            ],
+            self._v3_service_boundary_nodes(),
         )
         self._write_workflow(
             repo_root,
@@ -423,10 +450,7 @@ class MemoryIngestWorkflowCheckTests(unittest.TestCase):
         self._write_workflow(
             repo_root,
             "n8n/workflows-v3/01_memory_ingest.json",
-            [
-                self._postgres_node("Insert Vector", safe_vector_query, safe_vector_replacement),
-                self._postgres_node("Insert Audit", "SELECT 1;"),
-            ],
+            self._v3_service_boundary_nodes(),
         )
         self._write_workflow(
             repo_root,
@@ -498,10 +522,7 @@ class MemoryIngestWorkflowCheckTests(unittest.TestCase):
         self._write_workflow(
             repo_root,
             "n8n/workflows-v3/01_memory_ingest.json",
-            [
-                self._postgres_node("Insert Vector", safe_vector_query, safe_vector_replacement),
-                self._postgres_node("Insert Audit", "SELECT 1;"),
-            ],
+            self._v3_service_boundary_nodes(),
         )
         self._write_workflow(
             repo_root,

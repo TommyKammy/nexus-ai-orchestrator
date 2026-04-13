@@ -120,47 +120,59 @@
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "DELETE FROM policy_workflows WHERE workflow_id=$1 AND task_type=$2 AND tenant_id=$3 AND scope_pattern=$4;",
-        "additionalFields": {
-          "queryReplacement": "={{ [\n  $json.workflow_id,\n  $json.task_type,\n  $json.tenant_id,\n  $json.scope_pattern\n] }}"
+        "method": "POST",
+        "url": "http://policy-bundle-server:8088/internal/tenant-data/policy/workflow/delete",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ workflow_id: $json.workflow_id, task_type: $json.task_type, tenant_id: $json.tenant_id, scope_pattern: $json.scope_pattern }) }}",
+        "options": {
+          "timeout": 30000
         }
       },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         930,
         360
       ],
-      "name": "Delete Workflow Rule",
-      "credentials": {
-        "postgres": {
-          "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-          "name": "ai-postgres"
-        }
-      }
+      "name": "Delete Workflow Rule"
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "INSERT INTO policy_publish_logs (revision_id, action, actor, result, details_jsonb) VALUES ('draft', 'delete', $1, 'ok', $2::jsonb);",
-        "additionalFields": {
-          "queryReplacement": "={{ [\n  $('Validate Input').first().json.actor,\n  JSON.stringify($('Validate Input').first().json)\n] }}"
+        "method": "POST",
+        "url": "http://policy-bundle-server:8088/internal/tenant-data/policy/publish-log",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ revision_id: 'draft', action: 'delete', actor: $('Validate Input').first().json.actor, result: 'ok', details_jsonb: $('Validate Input').first().json }) }}",
+        "options": {
+          "timeout": 30000
         }
       },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         1160,
         360
       ],
-      "name": "Insert Delete Log",
-      "credentials": {
-        "postgres": {
-          "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-          "name": "ai-postgres"
-        }
-      }
+      "name": "Insert Delete Log"
     },
     {
       "parameters": {

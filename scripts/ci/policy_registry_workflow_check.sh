@@ -466,8 +466,73 @@ require_parameterized_query() {
   done
 }
 
+require_internal_http_json_node() {
+  local workflow_path="$1"
+  local node_name="$2"
+  local expected_url="$3"
+  local require_tenant_header="$4"
+  shift 4
+
+  local matched_nodes
+  local match_count
+  local node_type
+  local url
+  local headers
+  local json_body
+  matched_nodes="$(jq -c --arg node_name "$node_name" '[.nodes[] | select(.name == $node_name)]' "$workflow_path")"
+  match_count="$(jq -r 'length' <<<"$matched_nodes")"
+
+  if [[ "$match_count" -ne 1 ]]; then
+    echo "Expected exactly 1 node named '${node_name}' in ${workflow_path}, found ${match_count}" >&2
+    exit 1
+  fi
+
+  node_type="$(jq -r '.[0].type' <<<"$matched_nodes")"
+  url="$(jq -r '.[0].parameters.url' <<<"$matched_nodes")"
+  headers="$(jq -c '.[0].parameters.headerParameters.parameters // []' <<<"$matched_nodes")"
+  json_body="$(jq -r '.[0].parameters.jsonBody' <<<"$matched_nodes")"
+
+  if [[ "$node_type" != "n8n-nodes-base.httpRequest" ]]; then
+    echo "Expected '${node_name}' to be an HTTP request in ${workflow_path}, found ${node_type}" >&2
+    exit 1
+  fi
+
+  if [[ "$url" != "$expected_url" ]]; then
+    echo "URL mismatch for '${node_name}' in ${workflow_path}: expected ${expected_url}" >&2
+    exit 1
+  fi
+
+  if ! grep -Fq "X-API-Key" <<<"$headers"; then
+    echo "'${node_name}' must forward X-API-Key in ${workflow_path}" >&2
+    exit 1
+  fi
+
+  if ! grep -Fq "POLICY_BUNDLE_INTERNAL_API_KEY" <<<"$headers"; then
+    echo "'${node_name}' must source X-API-Key from workflow environment in ${workflow_path}" >&2
+    exit 1
+  fi
+
+  if [[ "$require_tenant_header" == "true" ]] && ! grep -Fq "X-Authenticated-Tenant-Id" <<<"$headers"; then
+    echo "'${node_name}' must forward X-Authenticated-Tenant-Id in ${workflow_path}" >&2
+    exit 1
+  fi
+
+  if [[ -z "$json_body" || "$json_body" == "null" ]]; then
+    echo "JSON body not found for '${node_name}' in ${workflow_path}" >&2
+    exit 1
+  fi
+
+  for pattern in "$@"; do
+    if ! grep -Fq -- "$pattern" <<<"$json_body"; then
+      echo "Missing '${pattern}' in '${node_name}' request body for ${workflow_path}" >&2
+      exit 1
+    fi
+  done
+}
+
 check_policy_registry_workflows() {
   local workflow_path="n8n/workflows-v3/$1"
+  local primary_node_type
 
   if [[ ! -f "$workflow_path" ]]; then
     echo "Workflow file not found: ${workflow_path}" >&2
@@ -475,24 +540,78 @@ check_policy_registry_workflows() {
   fi
 
   case "$1" in
+    06_policy_registry_upsert.json) primary_node_type="$(jq -r '.nodes[] | select(.name == "Upsert Workflow Rule") | .type' "$workflow_path")" ;;
+    07_policy_registry_publish.json) primary_node_type="$(jq -r '.nodes[] | select(.name == "Publish Revision") | .type' "$workflow_path")" ;;
+    09_policy_registry_get.json) primary_node_type="$(jq -r '.nodes[] | select(.name == "Get Workflow Rule") | .type' "$workflow_path")" ;;
+    11_policy_candidate_seed.json) primary_node_type="$(jq -r '.nodes[] | select(.name == "Insert Seed Episode") | .type' "$workflow_path")" ;;
+    12_policy_registry_delete.json) primary_node_type="$(jq -r '.nodes[] | select(.name == "Delete Workflow Rule") | .type' "$workflow_path")" ;;
+    *)
+      echo "Unhandled workflow fixture: $1" >&2
+      exit 1
+      ;;
+  esac
+
+  case "$1" in
     06_policy_registry_upsert.json)
-      require_parameterized_query "$workflow_path" "Upsert Workflow Rule" '$1' '$2' '$3' '$4' '$5::jsonb' '$6'
-      require_parameterized_query "$workflow_path" "Insert Upsert Log" '$1' '$2::jsonb'
+      if [[ "$primary_node_type" == "n8n-nodes-base.httpRequest" ]]; then
+        require_internal_http_json_node \
+          "$workflow_path" "Upsert Workflow Rule" "http://policy-bundle-server:8088/internal/tenant-data/policy/workflow/upsert" "false" \
+          "workflow_id" "task_type" "tenant_id" "scope_pattern" "constraints" "enabled"
+        require_internal_http_json_node \
+          "$workflow_path" "Insert Upsert Log" "http://policy-bundle-server:8088/internal/tenant-data/policy/publish-log" "false" \
+          "revision_id" "action" "actor" "result" "details_jsonb"
+      else
+        require_parameterized_query "$workflow_path" "Upsert Workflow Rule" '$1' '$2' '$3' '$4' '$5::jsonb' '$6'
+        require_parameterized_query "$workflow_path" "Insert Upsert Log" '$1' '$2::jsonb'
+      fi
       ;;
     07_policy_registry_publish.json)
-      require_parameterized_query "$workflow_path" "Publish Revision" '$1' '$2' '$3' '$4'
-      require_parameterized_query "$workflow_path" "Insert Publish Log" '$1' '$2' '$3::jsonb'
-      require_parameterized_query "$workflow_path" "Load Published Payload" '$1'
+      if [[ "$primary_node_type" == "n8n-nodes-base.httpRequest" ]]; then
+        require_internal_http_json_node \
+          "$workflow_path" "Publish Revision" "http://policy-bundle-server:8088/internal/tenant-data/policy/revision/publish" "false" \
+          "revision_id" "notes" "actor"
+        require_internal_http_json_node \
+          "$workflow_path" "Insert Publish Log" "http://policy-bundle-server:8088/internal/tenant-data/policy/publish-log" "false" \
+          "revision_id" "action" "actor" "result" "details_jsonb"
+        require_internal_http_json_node \
+          "$workflow_path" "Load Published Payload" "http://policy-bundle-server:8088/internal/tenant-data/policy/revision/payload" "false" \
+          "revision_id"
+      else
+        require_parameterized_query "$workflow_path" "Publish Revision" '$1' '$2' '$3' '$4'
+        require_parameterized_query "$workflow_path" "Insert Publish Log" '$1' '$2' '$3::jsonb'
+        require_parameterized_query "$workflow_path" "Load Published Payload" '$1'
+      fi
       ;;
     09_policy_registry_get.json)
-      require_parameterized_query "$workflow_path" "Get Workflow Rule" '$1' '$2'
+      if [[ "$primary_node_type" == "n8n-nodes-base.httpRequest" ]]; then
+        require_internal_http_json_node \
+          "$workflow_path" "Get Workflow Rule" "http://policy-bundle-server:8088/internal/tenant-data/policy/workflow/get" "false" \
+          "workflow_id" "task_type"
+      else
+        require_parameterized_query "$workflow_path" "Get Workflow Rule" '$1' '$2'
+      fi
       ;;
     11_policy_candidate_seed.json)
-      require_parameterized_query "$workflow_path" "Insert Seed Episode" '$1' '$2' '$3' '$4'
+      if [[ "$primary_node_type" == "n8n-nodes-base.httpRequest" ]]; then
+        require_internal_http_json_node \
+          "$workflow_path" "Insert Seed Episode" "http://policy-bundle-server:8088/internal/tenant-data/policy/candidate-event" "true" \
+          "task_type" "tenant_id" "scope" "source"
+      else
+        require_parameterized_query "$workflow_path" "Insert Seed Episode" '$1' '$2' '$3' '$4'
+      fi
       ;;
     12_policy_registry_delete.json)
-      require_parameterized_query "$workflow_path" "Delete Workflow Rule" '$1' '$2' '$3' '$4'
-      require_parameterized_query "$workflow_path" "Insert Delete Log" '$1' '$2::jsonb'
+      if [[ "$primary_node_type" == "n8n-nodes-base.httpRequest" ]]; then
+        require_internal_http_json_node \
+          "$workflow_path" "Delete Workflow Rule" "http://policy-bundle-server:8088/internal/tenant-data/policy/workflow/delete" "false" \
+          "workflow_id" "task_type" "tenant_id" "scope_pattern"
+        require_internal_http_json_node \
+          "$workflow_path" "Insert Delete Log" "http://policy-bundle-server:8088/internal/tenant-data/policy/publish-log" "false" \
+          "revision_id" "action" "actor" "result" "details_jsonb"
+      else
+        require_parameterized_query "$workflow_path" "Delete Workflow Rule" '$1' '$2' '$3' '$4'
+        require_parameterized_query "$workflow_path" "Insert Delete Log" '$1' '$2::jsonb'
+      fi
       ;;
     *)
       echo "Unhandled workflow fixture: $1" >&2

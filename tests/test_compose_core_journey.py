@@ -72,6 +72,22 @@ class ComposeCoreJourneyPatchTests(unittest.TestCase):
 
             self.assertEqual(js_code, original_js_code)
             self.assertEqual(patched["name"], "ci-name")
+            self.assertEqual(
+                patched["connections"]["Check Validation"]["main"][0][0]["node"],
+                "Validation Error?",
+            )
+            self.assertEqual(
+                patched["connections"]["Check Policy"]["main"][0][0]["node"],
+                "Policy Error?",
+            )
+            self.assertEqual(
+                patched["connections"]["Validation Error?"]["main"][1][0]["node"],
+                "Evaluate Policy",
+            )
+            self.assertEqual(
+                patched["connections"]["Policy Error?"]["main"][1][0]["node"],
+                "Insert Facts",
+            )
 
 
 if __name__ == "__main__":

@@ -102,6 +102,36 @@
     },
     {
       "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "validation-error",
+              "leftValue": "={{ $json.status === 'error' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        760,
+        200
+      ],
+      "name": "Validation Error?"
+    },
+    {
+      "parameters": {
         "method": "POST",
         "url": "={{($env.OPA_URL || 'http://opa:8181') + '/v1/data/ai/policy/result'}}",
         "sendHeaders": true,
@@ -120,6 +150,7 @@
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "continueOnFail": true,
       "position": [
         850,
         400
@@ -140,8 +171,38 @@
     },
     {
       "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "policy-error",
+              "leftValue": "={{ $json.status === 'error' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        260
+      ],
+      "name": "Policy Error?"
+    },
+    {
+      "parameters": {
         "respondWith": "json",
-        "json": "={{ JSON.stringify({ status: \"error\", message: $input.first().json.message, request_id: $input.first().json.request_id || null, policy: $input.first().json.policy || null, approval: $input.first().json.approval || null }) }}"
+        "responseBody": "={{ ({ status: 'error', message: $input.first().json.message, request_id: $input.first().json.request_id || null, policy: $input.first().json.policy || null, approval: $input.first().json.approval || null }) }}"
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
@@ -215,7 +276,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const fs = require('fs');\n\n// Load PCA model\nconst pca = JSON.parse(fs.readFileSync('/workspace/pca_model.json', 'utf8'));\n\nconst response = $input.first().json;\nconst embedding = response?.embedding?.values;\n\nif (!Array.isArray(embedding) || embedding.length === 0) {\n  throw new Error('Invalid embedding response from Gemini');\n}\n\n// PCA transformation\nconst mean = pca.mean;\nconst components = pca.components;\n\n// Center the embedding\nconst centered = embedding.map((v, i) => v - mean[i]);\n\n// Project onto principal components\nconst reduced = components.map(component =>\n  component.reduce((sum, weight, i) => sum + weight * centered[i], 0)\n);\n\nconst original = $('Check Validation').first().json;\n\nreturn [{\n  json: {\n    ...original,\n    embedding: `[${reduced.join(',')}]`\n  }\n}];"
+        "jsCode": "const fs = require('fs');\n\n// Load PCA model\nconst pca = JSON.parse(fs.readFileSync('/workspace/pca_model.json', 'utf8'));\n\nconst response = $input.first().json;\nconst embedding = response?.embedding?.values;\n\nif (!Array.isArray(embedding) || embedding.length === 0) {\n  throw new Error('Invalid embedding response from Gemini');\n}\n\n// PCA transformation\nconst mean = pca.mean;\nconst components = pca.components;\n\n// Center the embedding\nconst centered = embedding.map((v, i) => v - mean[i]);\n\n// Project onto principal components\nconst reduced = components.map(component =>\n  component.reduce((sum, weight, i) => sum + weight * centered[i], 0)\n);\n\nconst original = $('Check Policy').first().json;\n\nreturn [{\n  json: {\n    ...original,\n    embedding: `[${reduced.join(',')}]`\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
@@ -350,12 +411,7 @@
       "main": [
         [
           {
-            "node": "Error Response",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Evaluate Policy",
+            "node": "Validation Error?",
             "type": "main",
             "index": 0
           }
@@ -377,10 +433,41 @@
       "main": [
         [
           {
+            "node": "Policy Error?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validation Error?": {
+      "main": [
+        [
+          {
             "node": "Error Response",
             "type": "main",
             "index": 0
-          },
+          }
+        ],
+        [
+          {
+            "node": "Evaluate Policy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Policy Error?": {
+      "main": [
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
           {
             "node": "Insert Facts",
             "type": "main",

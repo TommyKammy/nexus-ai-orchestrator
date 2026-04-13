@@ -161,8 +161,6 @@ cat >"${TMP_DIR}/patch_01.jq" <<'JQ'
     }
     | del(.credentials)
   )
-| (.connections["Check Validation"].main[0]) = [{"node":"Evaluate Policy","type":"main","index":0}]
-| (.connections["Check Policy"].main[0]) = [{"node":"Insert Facts","type":"main","index":0}]
 | (.nodes[] | select(.name=="Generate Embedding")) |= (
     .type = "n8n-nodes-base.code"
     | .typeVersion = 1

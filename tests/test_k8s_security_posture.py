@@ -22,11 +22,11 @@ class KubernetesSecurityPostureTests(unittest.TestCase):
 
         self.assertNotRegex(
             operator_manifest,
-            r'value:\s*"redis://redis\.executor-system\.svc\.cluster\.local(?::6379)?(?:/[^"]*)?"',
+            r"""value:\s*["']?redis://redis\.executor-system\.svc\.cluster\.local(?::6379)?(?:/[^\s"'#]*)?["']?""",
         )
         self.assertRegex(
             operator_manifest,
-            r'value:\s*"rediss://redis\.executor-system\.svc\.cluster\.local:6379/0"',
+            r"""value:\s*["']?rediss://redis\.executor-system\.svc\.cluster\.local:6379/0["']?""",
         )
         self.assertRegex(
             operator_manifest,
@@ -63,7 +63,7 @@ class KubernetesSecurityPostureTests(unittest.TestCase):
             r"(?ms)readinessProbe:\n\s+exec:\n\s+command:\n\s+- python\n\s+- -c\n\s+- \|",
         )
         readiness_probe = re.search(
-            r"(?ms)^ {10}readinessProbe:\n(?P<block>(?:^ {12,}.*\n)+)",
+            r"(?m)^ {10}readinessProbe:\n(?P<block>(?:^(?: {12,}[^\n]*)?\n)+)",
             operator_manifest,
         )
         self.assertIsNotNone(readiness_probe)

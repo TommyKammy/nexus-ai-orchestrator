@@ -39,7 +39,7 @@ export EXECUTOR_API_KEY="change-me"
 export EXECUTOR_ALLOWED_ORIGINS="https://console.example.com"
 export EXECUTOR_MAX_REQUEST_BODY_BYTES=1048576
 
-# Start with Docker-in-Docker executor
+# Start with Sysbox-backed executor
 docker compose -f docker-compose.yml -f docker-compose.executor.yml up -d executor
 
 # Wait for service to be ready

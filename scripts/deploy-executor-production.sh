@@ -41,8 +41,16 @@ check_prerequisites() {
         exit 1
     fi
 
+    # Check Docker daemon reachability before probing for Sysbox.
+    local docker_info_error
+    docker_info_error="$(docker info 2>&1 >/dev/null)" || {
+        log_error "Docker daemon is not reachable"
+        log_error "$docker_info_error"
+        exit 1
+    }
+
     # Check Sysbox runtime
-    if ! docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -q 'sysbox-runc'; then
+    if ! docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -q '"sysbox-runc"'; then
         log_error "Docker runtime 'sysbox-runc' is not available on this host"
         log_error "Install Sysbox and configure Docker before deploying the executor"
         exit 1

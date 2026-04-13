@@ -70,7 +70,7 @@ services:
     entrypoint: |
       sh -c "
         # Start Docker daemon in background inside the Sysbox runtime
-        dockerd-entrypoint.sh dockerd --host=tcp://0.0.0.0:2375 --host=unix:///var/run/docker.sock &
+        dockerd-entrypoint.sh dockerd --host=unix:///var/run/docker.sock &
         
         # Wait for Docker to be ready
         while ! docker info >/dev/null 2>&1; do

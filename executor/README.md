@@ -39,7 +39,7 @@ export EXECUTOR_API_KEY="change-me"
 export EXECUTOR_ALLOWED_ORIGINS="https://console.example.com"
 export EXECUTOR_MAX_REQUEST_BODY_BYTES=1048576
 
-# Start with Docker-in-Docker executor
+# Start with Sysbox-backed executor
 docker compose -f docker-compose.yml -f docker-compose.executor.yml up -d executor
 
 # Wait for service to be ready
@@ -335,8 +335,10 @@ template_manager.register_template(template, persist=True)
 ### Prerequisites
 - Docker 20.10+
 - Docker Compose 2.0+
-- Linux host with privileged container support
+- Linux host with the `sysbox-runc` Docker runtime installed
 - Minimum 4GB RAM, 2 CPU cores
+
+Install and configure Sysbox on the host before deploying the executor stack. The executor compose path now expects Docker to expose the `sysbox-runc` runtime and no longer relies on `privileged: true`.
 
 ### Deployment Script
 
@@ -381,9 +383,9 @@ sudo systemctl restart docker
 
 ```bash
 # Check logs
-docker logs ai-executor-dind
+docker logs ai-executor-runtime
 
-# Verify Docker socket
+# Verify executor container
 docker ps | grep executor
 
 # Check port availability

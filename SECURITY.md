@@ -5,7 +5,7 @@ This document describes the security features of the Executor system and provide
 ## Table of Contents
 
 1. [Security Features](#security-features)
-2. [Docker-in-Docker (DinD) Security](#docker-in-docker-dind-security)
+2. [Executor Runtime Security](#executor-runtime-security)
 3. [API Authentication](#api-authentication)
 4. [Production Deployment](#production-deployment)
 5. [Security Best Practices](#security-best-practices)
@@ -46,21 +46,22 @@ All file operations are validated through `SecurePathValidator`:
 
 ---
 
-## Docker-in-Docker (DinD) Security
+## Executor Runtime Security
 
-### Current Implementation
+### Supported Implementation
 
-The Executor currently uses **privileged Docker-in-Docker** for sandbox creation:
+The supported executor deployment uses a **Sysbox-backed Docker runtime** for sandbox creation:
 
 ```yaml
-privileged: true  # Required for Docker-in-Docker
+runtime: sysbox-runc
 ```
 
-**Security Implications:**
-- Container has full access to host devices
-- Can modify host kernel parameters
-- Bypasses most container isolation
-- Potential for container escape
+The executor service no longer depends on `privileged: true`. Docker still runs inside the executor container, but the outer service is started under the `sysbox-runc` runtime so the host does not need to grant the full privileged DinD posture.
+
+**Operational Requirements:**
+- Install Sysbox on the host
+- Configure Docker to expose the `sysbox-runc` runtime
+- Validate the compose file with `docker compose --env-file .env.example -f docker-compose.executor.yml config -q`
 
 ### Mitigations in Place
 
@@ -68,10 +69,11 @@ privileged: true  # Required for Docker-in-Docker
 2. **Localhost binding**: API only accessible via `127.0.0.1:8080`
 3. **Read-only mounts**: Executor code mounted read-only
 4. **Health checks**: Container health monitoring
+5. **No privileged outer container**: Executor service keeps `no-new-privileges:true`
 
 ### Recommended Alternatives
 
-#### Option 1: Rootless Podman (Recommended)
+#### Option 1: Rootless Podman
 
 Podman supports rootless containers and doesn't require a daemon:
 
@@ -105,9 +107,9 @@ podman system migrate
 podman run --rm hello-world
 ```
 
-#### Option 2: Sysbox Runtime
+#### Option 2: Sysbox Runtime (Current Path)
 
-Sysbox is a container runtime that enables secure DinD without privileged mode:
+Sysbox enables Docker-in-Docker style workflows without privileged mode:
 
 ```yaml
 # docker-compose.executor.yml
@@ -172,7 +174,8 @@ services:
   executor:
     image: docker:25.0-dind
     runtime: sysbox-runc  # Add this line
-    # Remove: privileged: true
+    security_opt:
+      - no-new-privileges:true
     # ... rest of config
 ```
 

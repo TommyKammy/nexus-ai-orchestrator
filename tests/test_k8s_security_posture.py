@@ -6,9 +6,53 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 INGRESS_MANIFEST = REPO_ROOT / "k8s" / "config" / "deployment" / "ingress.yaml"
 OPERATOR_MANIFEST = REPO_ROOT / "k8s" / "config" / "deployment" / "operator-deployment.yaml"
+EXECUTOR_COMPOSE = REPO_ROOT / "docker-compose.executor.yml"
+
+
+def extract_compose_service_block(compose_text: str, service_name: str) -> str:
+    in_services = False
+    in_target_service = False
+    block_lines = []
+
+    for line in compose_text.splitlines():
+        if not in_services:
+            if line == "services:":
+                in_services = True
+            continue
+
+        if not in_target_service:
+            if re.match(rf"^  {re.escape(service_name)}:\s*$", line):
+                in_target_service = True
+                block_lines.append(line)
+            continue
+
+        if re.match(r"^[A-Za-z0-9_-]+:\s*$", line) or re.match(
+            r"^  [A-Za-z0-9_-]+:\s*$",
+            line,
+        ):
+            break
+
+        block_lines.append(line)
+
+    return "\n".join(block_lines) + ("\n" if block_lines else "")
 
 
 class KubernetesSecurityPostureTests(unittest.TestCase):
+    def test_executor_compose_avoids_privileged_dind(self):
+        executor_compose = EXECUTOR_COMPOSE.read_text(encoding="utf-8")
+        executor_block = extract_compose_service_block(executor_compose, "executor")
+
+        self.assertTrue(executor_block, "executor service block should exist")
+
+        self.assertNotRegex(
+            executor_block,
+            r"(?m)^\s*privileged:\s*true\b",
+        )
+        self.assertRegex(
+            executor_block,
+            r"(?m)^\s*runtime:\s*sysbox-runc\b",
+        )
+
     def test_executor_ingress_requires_tls(self):
         ingress_manifest = INGRESS_MANIFEST.read_text(encoding="utf-8")
 

@@ -20,9 +20,9 @@ class KubernetesSecurityPostureTests(unittest.TestCase):
     def test_kubernetes_redis_path_requires_authenticated_tls(self):
         operator_manifest = OPERATOR_MANIFEST.read_text(encoding="utf-8")
 
-        self.assertNotIn(
-            'value: "redis://redis.executor-system.svc.cluster.local:6379"',
+        self.assertNotRegex(
             operator_manifest,
+            r'value:\s*"redis://redis\.executor-system\.svc\.cluster\.local(?::6379)?(?:/[^"]*)?"',
         )
         self.assertRegex(
             operator_manifest,
@@ -30,7 +30,7 @@ class KubernetesSecurityPostureTests(unittest.TestCase):
         )
         self.assertRegex(
             operator_manifest,
-            r"secretKeyRef:\n\s+name:\s+redis-auth\n\s+key:\s+password",
+            r"(?ms)-\s+name:\s+REDIS_PASSWORD\n\s+valueFrom:\n\s+secretKeyRef:\n\s+name:\s+redis-auth\n\s+key:\s+password",
         )
         self.assertIn("--tls-port 6379", operator_manifest)
         self.assertIn("--port 0", operator_manifest)
@@ -38,7 +38,15 @@ class KubernetesSecurityPostureTests(unittest.TestCase):
         self.assertIn("--requirepass \"$REDIS_PASSWORD\"", operator_manifest)
         self.assertRegex(
             operator_manifest,
-            r"secretName:\s+redis-tls",
+            r"secretName:\s+redis-client-tls",
+        )
+        self.assertRegex(
+            operator_manifest,
+            r"secretName:\s+redis-server-tls",
+        )
+        self.assertNotRegex(
+            operator_manifest,
+            r"secretName:\s+redis-tls\b",
         )
 
 

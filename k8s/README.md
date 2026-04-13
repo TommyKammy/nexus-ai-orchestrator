@@ -75,7 +75,8 @@ Ingress TLS before the workloads will become ready.
 Create these secrets in `executor-system` before applying the deployments:
 
 - `redis-auth`: opaque secret with key `password`
-- `redis-tls`: secret containing `ca.crt`, `tls.crt`, and `tls.key`
+- `redis-server-tls`: secret containing the Redis server `ca.crt`, `tls.crt`, and `tls.key`
+- `redis-client-tls`: secret containing the Redis client `ca.crt`, `tls.crt`, and `tls.key`
 - `executor-edge-tls`: ingress TLS certificate for `executor.local`
 
 Example:
@@ -87,11 +88,17 @@ kubectl create secret generic redis-auth \
   -n executor-system \
   --from-literal=password='replace-with-strong-password'
 
-kubectl create secret generic redis-tls \
+kubectl create secret generic redis-server-tls \
   -n executor-system \
   --from-file=ca.crt=/path/to/ca.crt \
-  --from-file=tls.crt=/path/to/redis-client-server.crt \
-  --from-file=tls.key=/path/to/redis-client-server.key
+  --from-file=tls.crt=/path/to/redis-server.crt \
+  --from-file=tls.key=/path/to/redis-server.key
+
+kubectl create secret generic redis-client-tls \
+  -n executor-system \
+  --from-file=ca.crt=/path/to/ca.crt \
+  --from-file=tls.crt=/path/to/redis-client.crt \
+  --from-file=tls.key=/path/to/redis-client.key
 
 kubectl create secret tls executor-edge-tls \
   -n executor-system \
@@ -99,9 +106,9 @@ kubectl create secret tls executor-edge-tls \
   --key=/path/to/executor-edge.key
 ```
 
-Use distinct client/server certificates if your PKI policy requires it. The bundled
-manifests mount the same `redis-tls` secret into Redis, the operator, and the load
-balancer so authenticated internal clients can complete the TLS handshake.
+Use separate client and server certificates signed by the same CA. The bundled
+manifests mount `redis-server-tls` only into Redis and `redis-client-tls` only into
+the operator and load balancer so client compromise does not expose the server key.
 
 ### 4. Build and Push Images
 
@@ -123,8 +130,9 @@ kubectl apply -f k8s/config/deployment/ingress.yaml
 ```
 
 Rollout note: `redis`, `executor-operator`, and `executor-load-balancer` will stay
-unready until `redis-auth` and `redis-tls` exist, and the ingress controller will not
-serve TLS for `executor-edge` until `executor-edge-tls` exists.
+unready until `redis-auth`, `redis-server-tls`, and `redis-client-tls` exist, and the
+ingress controller will not serve TLS for `executor-edge` until `executor-edge-tls`
+exists.
 
 ### 6. Create Executor Pools
 

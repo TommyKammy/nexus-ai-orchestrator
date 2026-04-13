@@ -132,7 +132,7 @@ class SessionPersistenceManager:
         """Start the persistence manager."""
         logger.info("Starting Session Persistence Manager")
         
-        self.redis = await redis.from_url(self.redis_url, decode_responses=False)
+        self.redis = redis.from_url(self.redis_url, decode_responses=False)
         self._running = True
         
         # Start periodic snapshot task

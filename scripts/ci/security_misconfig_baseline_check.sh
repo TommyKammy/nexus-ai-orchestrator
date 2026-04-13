@@ -13,6 +13,15 @@ require_pattern() {
   fi
 }
 
+reject_pattern() {
+  local pattern="$1"
+  local file="$2"
+  if grep -Eq -- "${pattern}" "${file}"; then
+    echo "Forbidden pattern '${pattern}' present in ${file}" >&2
+    exit 1
+  fi
+}
+
 # Existing Caddy security baseline checks (headers + rate limit) must stay green.
 bash scripts/ci/caddy_security_headers_rate_limit_check.sh
 
@@ -27,7 +36,9 @@ require_pattern 'readOnlyRootFilesystem:[[:space:]]*true' k8s/config/deployment/
 require_pattern 'value:[[:space:]]*"rediss://redis\.executor-system\.svc\.cluster\.local:6379/0"' k8s/config/deployment/operator-deployment.yaml
 require_pattern 'secretKeyRef:[[:space:]]*$' k8s/config/deployment/operator-deployment.yaml
 require_pattern 'name:[[:space:]]*redis-auth' k8s/config/deployment/operator-deployment.yaml
-require_pattern 'secretName:[[:space:]]*redis-tls' k8s/config/deployment/operator-deployment.yaml
+require_pattern 'secretName:[[:space:]]*redis-client-tls' k8s/config/deployment/operator-deployment.yaml
+require_pattern 'secretName:[[:space:]]*redis-server-tls' k8s/config/deployment/operator-deployment.yaml
+reject_pattern 'secretName:[[:space:]]*redis-tls([[:space:]]|$)' k8s/config/deployment/operator-deployment.yaml
 require_pattern '--tls-port 6379' k8s/config/deployment/operator-deployment.yaml
 require_pattern '--port 0' k8s/config/deployment/operator-deployment.yaml
 require_pattern 'tls:' k8s/config/deployment/ingress.yaml

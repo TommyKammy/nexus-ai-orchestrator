@@ -208,7 +208,7 @@ spec:
       volumes:
         - name: redis-client-tls
           secret:
-            secretName: redis-tls
+            secretName: redis-client-tls
 ---
 # Redis for session persistence and load balancer state
 apiVersion: apps/v1
@@ -316,7 +316,7 @@ spec:
           emptyDir: {}
         - name: redis-server-tls
           secret:
-            secretName: redis-tls
+            secretName: redis-server-tls
 ---
 apiVersion: v1
 kind: Service
@@ -423,7 +423,7 @@ spec:
       volumes:
         - name: redis-client-tls
           secret:
-            secretName: redis-tls
+            secretName: redis-client-tls
 ---
 apiVersion: v1
 kind: Service

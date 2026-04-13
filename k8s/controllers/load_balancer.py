@@ -188,7 +188,7 @@ class GlobalLoadBalancer:
         """Start the load balancer."""
         logger.info("Starting Global Load Balancer")
         
-        self.redis = await redis.from_url(
+        self.redis = redis.from_url(
             self.redis_url,
             decode_responses=True,
             **_redis_connection_kwargs(),

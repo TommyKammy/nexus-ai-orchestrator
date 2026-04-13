@@ -74,7 +74,7 @@ async def get_redis_client() -> redis.Redis:
     """Get or create Redis client."""
     global redis_client
     if redis_client is None:
-        redis_client = await redis.from_url(
+        redis_client = redis.from_url(
             REDIS_URL,
             decode_responses=True,
             **_redis_connection_kwargs(),

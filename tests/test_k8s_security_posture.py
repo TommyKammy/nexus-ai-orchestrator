@@ -14,7 +14,7 @@ class KubernetesSecurityPostureTests(unittest.TestCase):
 
         self.assertRegex(
             ingress_manifest,
-            r"(?ms)^spec:\n.*^\s*tls:\n\s*-\s*hosts:\n\s*-\s*executor\.local\n\s*secretName:\s*\S+",
+            r"(?ms)^spec:\n.*^\s*tls:\n\s*-\s*hosts:\n\s*-\s*executor\.local\n\s*secretName:\s*executor-edge-tls\b",
         )
 
     def test_kubernetes_redis_path_requires_authenticated_tls(self):
@@ -62,9 +62,14 @@ class KubernetesSecurityPostureTests(unittest.TestCase):
             operator_manifest,
             r"(?ms)readinessProbe:\n\s+exec:\n\s+command:\n\s+- python\n\s+- -c\n\s+- \|",
         )
-        self.assertRegex(
+        readiness_probe = re.search(
+            r"(?ms)^ {10}readinessProbe:\n(?P<block>(?:^ {12,}.*\n)+)",
             operator_manifest,
-            r"(?ms)readinessProbe:\n.*^\s+timeoutSeconds:\s+5$",
+        )
+        self.assertIsNotNone(readiness_probe)
+        self.assertRegex(
+            readiness_probe.group("block"),
+            r"(?m)^ {12}timeoutSeconds:\s+5$",
         )
 
 

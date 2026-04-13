@@ -27,17 +27,5 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Lint
-        run: pnpm -r --if-present lint
-
-      - name: Typecheck
-        run: pnpm -r --if-present typecheck
-
-      - name: Test
-        run: pnpm -r --if-present test
-
-      - name: Build
-        run: pnpm -r --if-present build
-
-      - name: E2E
-        run: pnpm e2e
+      - name: Run default regression suite
+        run: bash scripts/ci/regression.sh

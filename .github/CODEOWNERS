@@ -1,6 +1,14 @@
 # Default ownership
 * @TommyKammy
 
+# Governance-critical paths
+/.github/CODEOWNERS @TommyKammy
+/.github/workflows/ @TommyKammy
+/scripts/ci/ @TommyKammy
+/policy/ @TommyKammy
+/SECURITY.md @TommyKammy
+/n8n/workflows-v3/05_policy_approval.json @TommyKammy
+
 # Infrastructure and deployment
 docker/** @TommyKammy
 k8s/** @TommyKammy

@@ -13,11 +13,7 @@ Direct pushes to `main` are not allowed.
 ## Required verification before merge
 
 ```bash
-pnpm -r --if-present lint
-pnpm -r --if-present typecheck
-pnpm -r --if-present test
-pnpm -r --if-present build
-pnpm e2e
+bash scripts/ci/regression.sh
 ```
 
 ## Security and scope expectations
@@ -26,6 +22,10 @@ pnpm e2e
 - Do not commit secrets or credentials.
 - Keep changes tightly scoped to the task.
 - Document risks and rollback in each PR description.
+- Governance-sensitive changes under `policy/`, `.github/workflows/`,
+  `.github/CODEOWNERS`, `scripts/ci/`, `SECURITY.md`, and
+  `n8n/workflows-v3/05_policy_approval.json` require two human approvals
+  after the latest push.
 
 Run a quick secret scan before opening a PR:
 

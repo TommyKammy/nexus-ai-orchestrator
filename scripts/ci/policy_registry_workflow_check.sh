@@ -476,6 +476,7 @@ require_internal_http_json_node() {
   local matched_nodes
   local match_count
   local node_type
+  local method
   local url
   local headers
   local json_body
@@ -488,12 +489,18 @@ require_internal_http_json_node() {
   fi
 
   node_type="$(jq -r '.[0].type' <<<"$matched_nodes")"
+  method="$(jq -r '.[0].parameters.method // empty' <<<"$matched_nodes")"
   url="$(jq -r '.[0].parameters.url' <<<"$matched_nodes")"
   headers="$(jq -c '.[0].parameters.headerParameters.parameters // []' <<<"$matched_nodes")"
   json_body="$(jq -r '.[0].parameters.jsonBody' <<<"$matched_nodes")"
 
   if [[ "$node_type" != "n8n-nodes-base.httpRequest" ]]; then
     echo "Expected '${node_name}' to be an HTTP request in ${workflow_path}, found ${node_type}" >&2
+    exit 1
+  fi
+
+  if [[ "$method" != "POST" ]]; then
+    echo "Expected '${node_name}' to use POST in ${workflow_path}, found ${method:-<unset>}" >&2
     exit 1
   fi
 

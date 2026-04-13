@@ -24,6 +24,7 @@ done
 
 validate_code="$(jq -r '.nodes[] | select(.name == "Validate Approval") | .parameters.jsCode' "$workflow_path")"
 insert_node_is_service_boundary="$(jq -r '.nodes[] | select(.name == "Insert Approval Audit") | .type == "n8n-nodes-base.httpRequest"' "$workflow_path")"
+insert_method="$(jq -r '.nodes[] | select(.name == "Insert Approval Audit") | .parameters.method' "$workflow_path")"
 insert_query="$(jq -r '.nodes[] | select(.name == "Insert Approval Audit") | .parameters.query' "$workflow_path")"
 insert_url="$(jq -r '.nodes[] | select(.name == "Insert Approval Audit") | .parameters.url' "$workflow_path")"
 insert_headers="$(jq -c '.nodes[] | select(.name == "Insert Approval Audit") | .parameters.headerParameters.parameters // []' "$workflow_path")"
@@ -39,6 +40,10 @@ for pattern in "approval.token" "timingSafeEqual" "N8N_ENCRYPTION_KEY" "policy.d
 done
 
 if [[ "$insert_node_is_service_boundary" == "true" ]]; then
+  if [[ "$insert_method" != "POST" ]]; then
+    echo "Insert Approval Audit must use POST in ${workflow_path}" >&2
+    exit 1
+  fi
   if [[ "$insert_url" != "http://policy-bundle-server:8088/internal/tenant-data/audit/event" ]]; then
     echo "Insert Approval Audit must call the internal audit service in ${workflow_path}" >&2
     exit 1

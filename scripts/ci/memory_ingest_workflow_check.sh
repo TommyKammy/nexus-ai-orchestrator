@@ -260,6 +260,7 @@ check_http_node_contract() {
   local method
   local url
   local header_dump
+  local tenant_header_value
 
   actual_type="$(jq -r --arg node_name "$node_name" '.nodes[] | select(.name == $node_name) | .type' "$workflow_path")"
   method="$(jq -r --arg node_name "$node_name" '.nodes[] | select(.name == $node_name) | .parameters.method' "$workflow_path")"
@@ -283,8 +284,12 @@ check_http_node_contract() {
   done
 
   if [[ -n "$header_json" && "$header_json" != "null" ]]; then
-    if ! grep -Fq "X-Authenticated-Tenant-Id" <<<"$header_dump"; then
+    tenant_header_value="$(jq -r '.[] | select(.name == "X-Authenticated-Tenant-Id") | .value // empty' <<<"$header_dump")"
+    if [[ -z "$tenant_header_value" ]]; then
       die "${node_name} must forward X-Authenticated-Tenant-Id in ${workflow_path}"
+    fi
+    if ! grep -Eq '\{\{[^}]*\$' <<<"$tenant_header_value"; then
+      die "${node_name} must source X-Authenticated-Tenant-Id from workflow data in ${workflow_path}"
     fi
   fi
 

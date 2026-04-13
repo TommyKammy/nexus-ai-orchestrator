@@ -18,6 +18,7 @@ LEGACY_WORKFLOW_QUERIES = {
 SERVICE_BOUNDARY_WORKFLOWS = {
     "n8n/workflows-v3/01_memory_ingest.json": {
         "node_name": "Insert Vector",
+        "method": "POST",
         "url": "http://policy-bundle-server:8088/internal/tenant-data/memory/vector",
         "tenant_header_reference": "={{ $input.first().json.tenant_id }}",
         "json_body_snippets": (
@@ -28,6 +29,7 @@ SERVICE_BOUNDARY_WORKFLOWS = {
     },
     "n8n/workflows-v3/02_vector_search.json": {
         "node_name": "Search Vectors",
+        "method": "POST",
         "url": "http://policy-bundle-server:8088/internal/tenant-data/memory/search",
         "tenant_header_reference": "={{ $input.first().json.tenant_id }}",
         "json_body_snippets": (
@@ -38,6 +40,7 @@ SERVICE_BOUNDARY_WORKFLOWS = {
     },
     "n8n/workflows-v3/04_executor_dispatch.json": {
         "node_name": "Insert Episode",
+        "method": "POST",
         "url": "http://policy-bundle-server:8088/internal/tenant-data/memory/episode",
         "tenant_header_reference": "={{ $('Finalize Success Payload').first().json.tenant_id }}",
         "json_body_snippets": (
@@ -136,6 +139,11 @@ class PostgresTenantRlsTests(unittest.TestCase):
                 node["type"],
                 "n8n-nodes-base.httpRequest",
                 f"{relative_path}:{node_name} must route RLS-protected data through an internal HTTP service boundary",
+            )
+            self.assertEqual(
+                parameters.get("method"),
+                expectations["method"],
+                f"{relative_path}:{node_name} must use the expected HTTP method for the tenant-data service boundary",
             )
             self.assertEqual(
                 parameters.get("url"),

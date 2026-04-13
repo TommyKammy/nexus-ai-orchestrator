@@ -6,9 +6,22 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 INGRESS_MANIFEST = REPO_ROOT / "k8s" / "config" / "deployment" / "ingress.yaml"
 OPERATOR_MANIFEST = REPO_ROOT / "k8s" / "config" / "deployment" / "operator-deployment.yaml"
+EXECUTOR_COMPOSE = REPO_ROOT / "docker-compose.executor.yml"
 
 
 class KubernetesSecurityPostureTests(unittest.TestCase):
+    def test_executor_compose_avoids_privileged_dind(self):
+        executor_compose = EXECUTOR_COMPOSE.read_text(encoding="utf-8")
+
+        self.assertNotRegex(
+            executor_compose,
+            r"(?m)^\s*privileged:\s*true\b",
+        )
+        self.assertRegex(
+            executor_compose,
+            r"(?m)^\s*runtime:\s*sysbox-runc\b",
+        )
+
     def test_executor_ingress_requires_tls(self):
         ingress_manifest = INGRESS_MANIFEST.read_text(encoding="utf-8")
 

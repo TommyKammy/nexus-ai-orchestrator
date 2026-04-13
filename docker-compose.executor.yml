@@ -1,8 +1,9 @@
-# docker-compose.executor.yml - Docker-in-Docker Executor Service
+# docker-compose.executor.yml - Sysbox-backed Executor Service
 # Phase 1: Core Sandbox Infrastructure
 #
-# This service provides Docker-in-Docker (DinD) capabilities for spawning
-# isolated sandbox containers per task.
+# This service provides a non-privileged Sysbox runtime for spawning
+# isolated sandbox containers per task while preserving the Docker-based
+# executor workflow.
 #
 # Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.executor.yml up -d executor
@@ -10,14 +11,14 @@
 services:
   executor:
     image: docker:25.0-dind
-    container_name: ai-executor-dind
+    container_name: ai-executor-runtime
     restart: always
-    privileged: true  # Required for Docker-in-Docker
+    runtime: sysbox-runc
     read_only: false
     network_mode: "bridge"
     command: []
     environment:
-      # Docker daemon configuration
+      # Docker daemon configuration inside the Sysbox system container
       DOCKER_TLS_CERTDIR: ""
       DOCKER_DRIVER: overlay2
       OPA_URL: ${OPA_URL:-http://opa:8181}
@@ -34,8 +35,7 @@ services:
       # Mount logs directory
       - ./logs/executor:/logs
       
-      # Mount Docker socket from host (optional, for host Docker access)
-      # Uncomment if you want to use host Docker instead of DinD
+      # Mount Docker socket from host (optional, not recommended)
       # - /var/run/docker.sock:/var/run/docker.sock
       
       # Persistent storage for Docker data (optional)
@@ -62,14 +62,14 @@ services:
           cpus: '0.5'
           memory: 512M
     
-    # Security options (in addition to privileged: true for DinD)
+    # Keep the executor service itself non-privileged.
     security_opt:
-      - no-new-privileges:false  # Required for DinD
+      - no-new-privileges:true
     
     # Build the sandbox image on startup
     entrypoint: |
       sh -c "
-        # Start Docker daemon in background
+        # Start Docker daemon in background inside the Sysbox runtime
         dockerd-entrypoint.sh dockerd --host=tcp://0.0.0.0:2375 --host=unix:///var/run/docker.sock &
         
         # Wait for Docker to be ready

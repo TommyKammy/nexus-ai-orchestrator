@@ -40,6 +40,13 @@ check_prerequisites() {
         log_error "Docker Compose is not installed"
         exit 1
     fi
+
+    # Check Sysbox runtime
+    if ! docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -q 'sysbox-runc'; then
+        log_error "Docker runtime 'sysbox-runc' is not available on this host"
+        log_error "Install Sysbox and configure Docker before deploying the executor"
+        exit 1
+    fi
     
     # Check if running as root or with sudo
     if [ "$EUID" -ne 0 ] && ! sudo -n true 2>/dev/null; then
@@ -112,7 +119,7 @@ health_check() {
     log_info "Running health checks..."
     
     # Check Docker container
-    if ! docker ps | grep -q "ai-executor-dind"; then
+    if ! docker ps | grep -q "ai-executor-runtime"; then
         log_error "Executor container is not running"
         exit 1
     fi
@@ -144,7 +151,7 @@ log() {
 }
 
 # Check container health
-if ! docker ps | grep -q "ai-executor-dind"; then
+if ! docker ps | grep -q "ai-executor-runtime"; then
     log "ERROR: Executor container is down"
     # Attempt restart
     cd /opt/ai-orchestrator

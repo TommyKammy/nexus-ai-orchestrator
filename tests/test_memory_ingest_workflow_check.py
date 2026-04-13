@@ -14,6 +14,27 @@ SCRIPT_PATH = REPO_ROOT / "scripts" / "ci" / "memory_ingest_workflow_check.sh"
 class MemoryIngestWorkflowCheckTests(unittest.TestCase):
     maxDiff = None
 
+    def test_memory_ingest_validators_use_task_runner_safe_hashing(self):
+        workflow_paths = (
+            REPO_ROOT / "n8n" / "workflows" / "01_memory_ingest.json",
+            REPO_ROOT / "n8n" / "workflows-v3" / "01_memory_ingest.json",
+            REPO_ROOT / "n8n" / "workflows" / "01_memory_ingest_v3_cached.json",
+        )
+
+        for workflow_path in workflow_paths:
+            workflow = __import__("json").loads(workflow_path.read_text(encoding="utf-8"))
+            validator_code = next(
+                node["parameters"]["jsCode"]
+                for node in workflow["nodes"]
+                if node["name"] == "Validate and Filter"
+            )
+
+            self.assertNotIn("require('crypto')", validator_code)
+            self.assertNotIn("globalThis.crypto", validator_code)
+            self.assertIn("const K = [", validator_code)
+            self.assertIn("const contentHash = sha256Hex(normalizedText);", validator_code)
+            self.assertIn("content_hash: contentHash", validator_code)
+
     def _make_temp_repo(self) -> Path:
         tmpdir = Path(tempfile.mkdtemp(prefix="memory-ingest-workflow-check-"))
         self.addCleanup(shutil.rmtree, tmpdir, ignore_errors=True)

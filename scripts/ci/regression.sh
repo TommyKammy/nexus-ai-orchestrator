@@ -15,8 +15,15 @@ pnpm e2e
 
 echo "[regression] 3/3 k8s smoke"
 K8S_NAMESPACE="${K8S_NAMESPACE:-executor-system}"
-if command -v kubectl >/dev/null 2>&1; then
-  if kubectl get namespace "${K8S_NAMESPACE}" >/dev/null 2>&1; then
+if ! command -v kubectl >/dev/null 2>&1; then
+  echo "Skipping k8s smoke: kubectl not found."
+else
+  K8S_CONTEXT="$(kubectl config current-context 2>/dev/null || true)"
+  if [[ -z "${K8S_CONTEXT}" ]]; then
+    echo "Skipping k8s smoke: kubectl current context is not configured."
+  elif ! kubectl cluster-info >/dev/null 2>&1; then
+    echo "Skipping k8s smoke: kube cluster for context '${K8S_CONTEXT}' is unavailable."
+  elif kubectl get namespace "${K8S_NAMESPACE}" >/dev/null 2>&1; then
     bash scripts/ci/k8s_smoke_test.sh
   else
     ns_check_err="$(kubectl get namespace "${K8S_NAMESPACE}" 2>&1 >/dev/null || true)"
@@ -28,8 +35,6 @@ if command -v kubectl >/dev/null 2>&1; then
       exit 1
     fi
   fi
-else
-  echo "Skipping k8s smoke: kubectl not found."
 fi
 
 echo "[regression] complete"

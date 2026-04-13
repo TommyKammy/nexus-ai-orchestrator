@@ -48,6 +48,24 @@ class KubernetesSecurityPostureTests(unittest.TestCase):
             operator_manifest,
             r"secretName:\s+redis-tls\b",
         )
+        self.assertIn('os.environ["REDIS_URL"]', operator_manifest)
+        self.assertIn('os.environ.get("REDIS_PASSWORD")', operator_manifest)
+        self.assertIn(
+            'os.environ.get("REDIS_TLS_ENABLED", "").lower() == "true"',
+            operator_manifest,
+        )
+        self.assertIn('os.environ.get("REDIS_TLS_CA_CERT_FILE")', operator_manifest)
+        self.assertIn('os.environ.get("REDIS_TLS_CERT_FILE")', operator_manifest)
+        self.assertIn('os.environ.get("REDIS_TLS_KEY_FILE")', operator_manifest)
+        self.assertIn("await client.ping()", operator_manifest)
+        self.assertRegex(
+            operator_manifest,
+            r"(?ms)readinessProbe:\n\s+exec:\n\s+command:\n\s+- python\n\s+- -c\n\s+- \|",
+        )
+        self.assertRegex(
+            operator_manifest,
+            r"(?ms)readinessProbe:\n.*^\s+timeoutSeconds:\s+5$",
+        )
 
 
 if __name__ == "__main__":

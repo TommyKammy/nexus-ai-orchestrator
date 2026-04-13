@@ -198,9 +198,52 @@ spec:
               command:
                 - python
                 - -c
-                - "import kopf; print('ready')"
+                - |
+                  import asyncio
+                  import os
+
+                  import redis.asyncio as redis
+
+
+                  async def main() -> None:
+                      connection_kwargs = {
+                          "socket_connect_timeout": 3,
+                          "socket_timeout": 3,
+                      }
+
+                      redis_password = os.environ.get("REDIS_PASSWORD")
+                      if redis_password:
+                          connection_kwargs["password"] = redis_password
+
+                      if os.environ.get("REDIS_TLS_ENABLED", "").lower() == "true":
+                          connection_kwargs["ssl"] = True
+                          connection_kwargs["ssl_cert_reqs"] = os.environ.get(
+                              "REDIS_TLS_CERT_REQS", "required"
+                          )
+
+                          ca_cert = os.environ.get("REDIS_TLS_CA_CERT_FILE")
+                          cert_file = os.environ.get("REDIS_TLS_CERT_FILE")
+                          key_file = os.environ.get("REDIS_TLS_KEY_FILE")
+
+                          if ca_cert:
+                              connection_kwargs["ssl_ca_certs"] = ca_cert
+                          if cert_file:
+                              connection_kwargs["ssl_certfile"] = cert_file
+                          if key_file:
+                              connection_kwargs["ssl_keyfile"] = key_file
+
+                      client = redis.from_url(
+                          os.environ["REDIS_URL"],
+                          decode_responses=True,
+                          **connection_kwargs,
+                      )
+                      await client.ping()
+
+
+                  asyncio.run(main())
             initialDelaySeconds: 5
             periodSeconds: 5
+            timeoutSeconds: 5
           volumeMounts:
             - name: redis-client-tls
               mountPath: /etc/redis/tls

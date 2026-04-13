@@ -44,11 +44,41 @@ NAMESPACE = os.environ.get("OPERATOR_NAMESPACE", "default")
 REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379")
 
 
+def _redis_connection_kwargs() -> Dict[str, Any]:
+    """Build optional redis-py connection kwargs from environment."""
+    connection_kwargs: Dict[str, Any] = {}
+
+    redis_password = os.environ.get("REDIS_PASSWORD")
+    if redis_password:
+        connection_kwargs["password"] = redis_password
+
+    if os.environ.get("REDIS_TLS_ENABLED", "").lower() == "true":
+        connection_kwargs["ssl"] = True
+        connection_kwargs["ssl_cert_reqs"] = os.environ.get("REDIS_TLS_CERT_REQS", "required")
+
+        ca_cert = os.environ.get("REDIS_TLS_CA_CERT_FILE")
+        cert_file = os.environ.get("REDIS_TLS_CERT_FILE")
+        key_file = os.environ.get("REDIS_TLS_KEY_FILE")
+
+        if ca_cert:
+            connection_kwargs["ssl_ca_certs"] = ca_cert
+        if cert_file:
+            connection_kwargs["ssl_certfile"] = cert_file
+        if key_file:
+            connection_kwargs["ssl_keyfile"] = key_file
+
+    return connection_kwargs
+
+
 async def get_redis_client() -> redis.Redis:
     """Get or create Redis client."""
     global redis_client
     if redis_client is None:
-        redis_client = await redis.from_url(REDIS_URL, decode_responses=True)
+        redis_client = redis.from_url(
+            REDIS_URL,
+            decode_responses=True,
+            **_redis_connection_kwargs(),
+        )
     return redis_client
 
 

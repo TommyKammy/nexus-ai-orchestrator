@@ -40,6 +40,8 @@ class GovernanceDefaultsTests(unittest.TestCase):
         pr_template = PR_TEMPLATE.read_text(encoding="utf-8")
 
         self.assertIn("bash scripts/ci/regression.sh", contributing)
+        self.assertIn("bash scripts/ci/regression.sh", pr_template)
+        self.assertIn("two human approvals", contributing)
         self.assertIn("two human approvals", pr_template)
 
 

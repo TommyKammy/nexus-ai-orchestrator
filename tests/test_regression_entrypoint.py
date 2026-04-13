@@ -17,6 +17,10 @@ class RegressionEntrypointTests(unittest.TestCase):
         path.chmod(0o755)
 
     def _run_regression(self, kubectl_script: str) -> subprocess.CompletedProcess[str]:
+        bash_path = shutil.which("bash")
+        if bash_path is None:
+            raise RuntimeError("bash is required to run regression entrypoint tests")
+
         tmpdir = Path(tempfile.mkdtemp(prefix="regression-entrypoint-"))
         self.addCleanup(shutil.rmtree, tmpdir, ignore_errors=True)
 
@@ -35,14 +39,15 @@ class RegressionEntrypointTests(unittest.TestCase):
         self._write_executable(bindir / "kubectl", kubectl_script)
 
         env = os.environ.copy()
-        env["PATH"] = f"{bindir}:{env.get('PATH', '')}"
+        env["PATH"] = f"{bindir}{os.pathsep}{env.get('PATH', '')}"
 
         return subprocess.run(
-            ["bash", str(REGRESSION_SCRIPT)],
+            [bash_path, str(REGRESSION_SCRIPT)],  # noqa: S603
             cwd=REPO_ROOT,
             env=env,
             capture_output=True,
             text=True,
+            timeout=120,
         )
 
     def test_skips_k8s_smoke_when_current_context_is_not_configured(self):

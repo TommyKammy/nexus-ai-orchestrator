@@ -12,6 +12,19 @@ repo-local contract. The canonical source is
 - `policy-and-executor`
 - `security-audit`
 
+## GitHub `main` Review Settings
+
+Apply these review settings alongside the required checks above:
+
+- `required_approving_review_count: 2`
+- `require_code_owner_reviews: true`
+- `dismiss_stale_reviews: true`
+
+Treat changes to `policy/`, `.github/workflows/`, `.github/CODEOWNERS`,
+`scripts/ci/`, `SECURITY.md`, and
+`n8n/workflows-v3/05_policy_approval.json` as governance-sensitive. Those
+changes should not merge without two human approvals after the latest push.
+
 ## Verification Command
 
 Run this before changing workflow job IDs, workflow job `name:` values, or
@@ -37,7 +50,7 @@ The command fails when:
 4. Run `bash scripts/ci/branch_protection_check_names_check.sh`.
 5. Run the usual CI verification for the affected change set.
 6. After the branch is green, update GitHub `main` branch protection to match
-   the canonical list.
+   the canonical list and review settings above.
 
 Do not guess required check names from stale docs or historical GitHub UI
 screenshots. Use the manifest and validation command as the source of truth.

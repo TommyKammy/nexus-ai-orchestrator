@@ -8,11 +8,7 @@
 Run and paste results:
 
 ```bash
-pnpm -r --if-present lint
-pnpm -r --if-present typecheck
-pnpm -r --if-present test
-pnpm -r --if-present build
-pnpm e2e
+bash scripts/ci/regression.sh
 ```
 
 Additional project checks (if applicable):
@@ -35,4 +31,5 @@ Additional project checks (if applicable):
 - [ ] Scope is focused to one objective
 - [ ] No direct push to `main`
 - [ ] Security-sensitive changes reviewed
+- [ ] Governance-sensitive `policy`/CI/CODEOWNERS changes have two human approvals
 - [ ] No secrets or credentials added

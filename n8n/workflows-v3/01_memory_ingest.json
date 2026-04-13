@@ -161,6 +161,10 @@
             {
               "name": "Content-Type",
               "value": "application/json"
+            },
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.POLICY_BUNDLE_INTERNAL_API_KEY || $env.N8N_WEBHOOK_API_KEY }}"
             }
           ]
         },
@@ -235,6 +239,10 @@
             {
               "name": "X-Authenticated-Tenant-Id",
               "value": "={{ $input.first().json.tenant_id }}"
+            },
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.POLICY_BUNDLE_INTERNAL_API_KEY || $env.N8N_WEBHOOK_API_KEY }}"
             }
           ]
         },
@@ -279,6 +287,10 @@
             {
               "name": "X-Authenticated-Tenant-Id",
               "value": "={{ $input.first().json.tenant_id }}"
+            },
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.POLICY_BUNDLE_INTERNAL_API_KEY || $env.N8N_WEBHOOK_API_KEY }}"
             }
           ]
         },

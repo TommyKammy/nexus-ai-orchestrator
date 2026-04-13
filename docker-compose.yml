@@ -44,6 +44,7 @@ services:
       N8N_BASIC_AUTH_USER: admin
       N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASSWORD}
       N8N_WEBHOOK_API_KEY: ${N8N_WEBHOOK_API_KEY}
+      POLICY_BUNDLE_INTERNAL_API_KEY: ${POLICY_BUNDLE_INTERNAL_API_KEY:-${N8N_WEBHOOK_API_KEY}}
       # Temporary requirement for the shared webhook auth Code nodes; keep workflow edit access tightly restricted because this exposes env vars to editable workflows.
       # Remove this override after the auth gate stops reading $env.N8N_WEBHOOK_API_KEY. See SECURITY.md for the operator runbook.
       N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
@@ -202,11 +203,10 @@ services:
       POLICY_REGISTRY_DB_NAME: ${POLICY_REGISTRY_DB_NAME:-ai_memory}
       POLICY_REGISTRY_DB_USER: ${POLICY_REGISTRY_DB_USER:-ai_user}
       POLICY_REGISTRY_DB_PASSWORD: ${POLICY_REGISTRY_DB_PASSWORD:-${POSTGRES_PASSWORD}}
+      POLICY_BUNDLE_INTERNAL_API_KEY: ${POLICY_BUNDLE_INTERNAL_API_KEY:-${N8N_WEBHOOK_API_KEY}}
     volumes:
       - ./policy/opa:/policy-source:ro
       - ./policy/runtime:/policy-runtime
-    ports:
-      - "127.0.0.1:8088:8088"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8088/healthz', timeout=2)"]
       interval: 10s

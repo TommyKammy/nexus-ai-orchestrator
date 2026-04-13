@@ -21,6 +21,7 @@ UI_ROOT = os.path.join(os.path.dirname(__file__), "ui")
 HOST = os.environ.get("BUNDLE_SERVER_HOST", "0.0.0.0")
 PORT = int(os.environ.get("BUNDLE_SERVER_PORT", "8088"))
 PUBLISH_API_KEY = os.environ.get("POLICY_BUNDLE_PUBLISH_API_KEY", "").strip()
+INTERNAL_API_KEY = os.environ.get("POLICY_BUNDLE_INTERNAL_API_KEY", "").strip()
 AUTHENTICATED_TENANT_HEADER = "X-Authenticated-Tenant-Id"
 DB_HOST = os.environ.get("POLICY_REGISTRY_DB_HOST", "postgres")
 DB_PORT = int(os.environ.get("POLICY_REGISTRY_DB_PORT", "5432"))
@@ -824,6 +825,18 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json(401, {"ok": False, "error": "Unauthorized"})
         return False
 
+    def _require_internal_auth(self):
+        if not INTERNAL_API_KEY:
+            self._send_json(503, {"ok": False, "error": "Internal tenant data authentication not configured"})
+            return False
+
+        auth_header = self.headers.get("X-API-Key", "").strip()
+        if auth_header == INTERNAL_API_KEY:
+            return True
+
+        self._send_json(401, {"ok": False, "error": "Unauthorized"})
+        return False
+
     def _send_json(self, status, payload):
         body = json.dumps(payload, ensure_ascii=True).encode("utf-8")
         self.send_response(status)
@@ -866,6 +879,9 @@ class Handler(BaseHTTPRequestHandler):
         route = INTERNAL_POST_ROUTES.get(path)
         if route is None:
             self._send_json(404, {"ok": False, "error": "unknown internal api path"})
+            return
+
+        if not self._require_internal_auth():
             return
 
         payload, err = _read_body_json(self)

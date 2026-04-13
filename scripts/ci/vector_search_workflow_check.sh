@@ -125,6 +125,10 @@ check_workflow() {
       echo "Search Vectors must forward X-Authenticated-Tenant-Id in ${workflow_path}" >&2
       exit 1
     fi
+    if ! grep -Fq "X-API-Key" <<<"$search_headers"; then
+      echo "Search Vectors must forward X-API-Key in ${workflow_path}" >&2
+      exit 1
+    fi
     for pattern in "embedding" "tenant_id" "scope"; do
       if ! grep -Fq "$pattern" <<<"$search_body"; then
         echo "Search Vectors request body is missing '${pattern}' in ${workflow_path}" >&2
@@ -138,6 +142,10 @@ check_workflow() {
     fi
     if ! grep -Fq "X-Authenticated-Tenant-Id" <<<"$audit_headers"; then
       echo "Insert Audit must forward X-Authenticated-Tenant-Id in ${workflow_path}" >&2
+      exit 1
+    fi
+    if ! grep -Fq "X-API-Key" <<<"$audit_headers"; then
+      echo "Insert Audit must forward X-API-Key in ${workflow_path}" >&2
       exit 1
     fi
     for pattern in "tenant_id" "policy" "request_id"; do

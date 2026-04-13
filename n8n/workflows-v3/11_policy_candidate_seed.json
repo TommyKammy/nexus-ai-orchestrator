@@ -150,6 +150,10 @@
             {
               "name": "X-Authenticated-Tenant-Id",
               "value": "={{ $json.tenant_id }}"
+            },
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.POLICY_BUNDLE_INTERNAL_API_KEY || $env.N8N_WEBHOOK_API_KEY }}"
             }
           ]
         },

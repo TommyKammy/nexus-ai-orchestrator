@@ -114,6 +114,10 @@ check_workflow() {
       echo "Insert Audit must forward X-Authenticated-Tenant-Id in ${workflow_path}" >&2
       exit 1
     fi
+    if ! grep -Fq "X-API-Key" <<<"$audit_headers"; then
+      echo "Insert Audit must forward X-API-Key in ${workflow_path}" >&2
+      exit 1
+    fi
     for pattern in "payload_jsonb" "request_id" "policy_id" "policy_version" "risk_score"; do
       if ! grep -Fq "$pattern" <<<"$audit_body"; then
         echo "Insert Audit request body is missing '${pattern}' in ${workflow_path}" >&2

@@ -287,6 +287,13 @@ check_http_node_contract() {
       die "${node_name} must forward X-Authenticated-Tenant-Id in ${workflow_path}"
     fi
   fi
+
+  if ! grep -Fq "X-API-Key" <<<"$header_dump"; then
+    die "${node_name} must forward X-API-Key in ${workflow_path}"
+  fi
+  if ! grep -Fq "POLICY_BUNDLE_INTERNAL_API_KEY" <<<"$header_dump" && ! grep -Fq "N8N_WEBHOOK_API_KEY" <<<"$header_dump"; then
+    die "${node_name} must source X-API-Key from workflow environment in ${workflow_path}"
+  fi
 }
 
 check_service_boundary_workflow() {

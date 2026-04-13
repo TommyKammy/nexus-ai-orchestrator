@@ -89,6 +89,10 @@ check_workflow() {
       echo "Insert Episode must forward X-Authenticated-Tenant-Id in ${workflow_path}" >&2
       exit 1
     fi
+    if ! grep -Fq "X-API-Key" <<<"$episode_headers"; then
+      echo "Insert Episode must forward X-API-Key in ${workflow_path}" >&2
+      exit 1
+    fi
     for pattern in "tenant_id" "scope" "outcome" "metadata_jsonb"; do
       if ! grep -Fq "$pattern" <<<"$episode_body"; then
         echo "Insert Episode request body is missing '${pattern}' in ${workflow_path}" >&2
@@ -102,6 +106,10 @@ check_workflow() {
     fi
     if ! grep -Fq "X-Authenticated-Tenant-Id" <<<"$audit_headers"; then
       echo "Insert Audit must forward X-Authenticated-Tenant-Id in ${workflow_path}" >&2
+      exit 1
+    fi
+    if ! grep -Fq "X-API-Key" <<<"$audit_headers"; then
+      echo "Insert Audit must forward X-API-Key in ${workflow_path}" >&2
       exit 1
     fi
     for pattern in "tenant_id" "policy" "request_id"; do

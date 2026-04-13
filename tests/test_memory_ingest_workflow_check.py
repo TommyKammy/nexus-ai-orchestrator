@@ -60,7 +60,10 @@ class MemoryIngestWorkflowCheckTests(unittest.TestCase):
         }
 
     def _http_node(self, name: str, url: str, json_body: str, include_tenant_header: bool = False) -> dict:
-        headers = [{"name": "Content-Type", "value": "application/json"}]
+        headers = [
+            {"name": "Content-Type", "value": "application/json"},
+            {"name": "X-API-Key", "value": "={{ $env.POLICY_BUNDLE_INTERNAL_API_KEY || $env.N8N_WEBHOOK_API_KEY }}"},
+        ]
         if include_tenant_header:
             headers.append({"name": "X-Authenticated-Tenant-Id", "value": "={{ $json.tenant_id }}"})
 

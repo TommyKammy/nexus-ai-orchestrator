@@ -256,52 +256,80 @@
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "WITH tenant_context AS (SELECT set_config('app.current_tenant_id', $2, true) AS tenant_ctx)\nSELECT id, scope, content, tags, source, created_at,\n       (embedding <=> $1::vector) AS cosine_distance\nFROM memory_vectors\nCROSS JOIN tenant_context\nWHERE tenant_id = $2 AND scope = $3\nORDER BY embedding <=> $1::vector\nLIMIT $4;",
-        "additionalFields": {
-          "queryReplacement": "={{ [$input.first().json.embedding, $input.first().json.tenant_id, $input.first().json.scope, Number($input.first().json.k)] }}"
+        "method": "POST",
+        "url": "http://policy-bundle-server:8088/internal/tenant-data/memory/search",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Authenticated-Tenant-Id",
+              "value": "={{ $input.first().json.tenant_id }}"
+            },
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.POLICY_BUNDLE_INTERNAL_API_KEY || $env.N8N_WEBHOOK_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ embedding: $input.first().json.embedding, tenant_id: $input.first().json.tenant_id, scope: $input.first().json.scope, k: Number($input.first().json.k) }) }}",
+        "options": {
+          "timeout": 30000
         }
       },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         1250,
         400
       ],
-      "name": "Search Vectors",
-      "credentials": {
-        "postgres": {
-          "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-          "name": "ai-postgres"
-        }
-      }
+      "name": "Search Vectors"
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "INSERT INTO audit_events (\n  actor,\n  action,\n  target,\n  decision,\n  payload_jsonb,\n  request_id,\n  policy_id,\n  policy_version,\n  policy_reason,\n  risk_score,\n  created_at\n)\nVALUES (\n  'workflow:vector_search',\n  'memory_read',\n  $1,\n  $2,\n  $3::jsonb,\n  $4,\n  $5,\n  $6,\n  $7,\n  $8,\n  NOW()\n);",
-        "additionalFields": {
-          "queryReplacement": "={{ [\n  $('Check Policy').first().json.scope,\n  $('Check Policy').first().json.policy?.decision || 'allow',\n  JSON.stringify({\n    request_id: $('Check Policy').first().json.request_id || '',\n    query: $('Check Policy').first().json.query || '',\n    k: $('Check Policy').first().json.k || 0,\n    policy: $('Check Policy').first().json.policy || {}\n  }),\n  $('Check Policy').first().json.request_id || null,\n  $('Check Policy').first().json.policy?.policy_id || null,\n  $('Check Policy').first().json.policy?.policy_version || null,\n  Array.isArray($('Check Policy').first().json.policy?.reasons)\n    ? $('Check Policy').first().json.policy.reasons.join('; ')\n    : null,\n  Number.isFinite(Number($('Check Policy').first().json.policy?.risk_score))\n    ? Math.round(Number($('Check Policy').first().json.policy.risk_score))\n    : null\n] }}"
+        "method": "POST",
+        "url": "http://policy-bundle-server:8088/internal/tenant-data/audit/event",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Authenticated-Tenant-Id",
+              "value": "={{ $('Check Policy').first().json.tenant_id }}"
+            },
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.POLICY_BUNDLE_INTERNAL_API_KEY || $env.N8N_WEBHOOK_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ actor: 'workflow:vector_search', action: 'memory_read', target: $('Check Policy').first().json.scope, decision: $('Check Policy').first().json.policy?.decision || 'allow', payload_jsonb: { tenant_id: $('Check Policy').first().json.tenant_id, request_id: $('Check Policy').first().json.request_id || '', query: $('Check Policy').first().json.query || '', k: $('Check Policy').first().json.k || 0, policy: $('Check Policy').first().json.policy || {} }, request_id: $('Check Policy').first().json.request_id || null, policy_id: $('Check Policy').first().json.policy?.policy_id || null, policy_version: $('Check Policy').first().json.policy?.policy_version || null, policy_reason: Array.isArray($('Check Policy').first().json.policy?.reasons) ? $('Check Policy').first().json.policy.reasons.join('; ') : null, risk_score: Number.isFinite(Number($('Check Policy').first().json.policy?.risk_score)) ? Math.round(Number($('Check Policy').first().json.policy.risk_score)) : null }) }}",
+        "options": {
+          "timeout": 30000
         }
       },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         1450,
         400
       ],
-      "name": "Insert Audit",
-      "credentials": {
-        "postgres": {
-          "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-          "name": "ai-postgres"
-        }
-      }
+      "name": "Insert Audit"
     },
     {
       "parameters": {
         "respondWith": "json",
-        "jsCode": "const searchResults = $('Search Vectors').all().map((item) => item.json);\nconst original = $('Check Policy').first().json;\n\nconst rankedResults = searchResults.map((r, index) => {\n  const distance = Number(r.cosine_distance);\n  const similarity = Number.isFinite(distance)\n    ? Math.max(0, Math.min(1, 1 - distance))\n    : null;\n\n  return {\n    id: r.id,\n    rank: index + 1,\n    scope: r.scope,\n    content: r.content,\n    tags: r.tags,\n    source: r.source,\n    created_at: r.created_at,\n    cosine_distance: Number.isFinite(distance) ? distance : null,\n    similarity_score: similarity,\n  };\n});\n\nconst response = {\n  status: 'success',\n  mode: 'vector_cosine',\n  request_id: original.request_id,\n  query: original.query,\n  tenant_id: original.tenant_id,\n  scope: original.scope,\n  k: original.k,\n  policy: original.policy || null,\n  results_count: rankedResults.length,\n  results: rankedResults,\n  timestamp: new Date().toISOString()\n};\n\nreturn [{ json: response }];"
+        "jsCode": "const searchResults = $('Search Vectors').all().flatMap((item) => {\n  const json = item.json;\n  if (Array.isArray(json?.results)) {\n    return json.results;\n  }\n  if (Array.isArray(json)) {\n    return json;\n  }\n  return json ? [json] : [];\n});\nconst original = $('Check Policy').first().json;\n\nconst rankedResults = searchResults.map((r, index) => {\n  const distance = Number(r.cosine_distance);\n  const similarity = Number.isFinite(distance)\n    ? Math.max(0, Math.min(1, 1 - distance))\n    : null;\n\n  return {\n    id: r.id,\n    rank: index + 1,\n    scope: r.scope,\n    content: r.content,\n    tags: r.tags,\n    source: r.source,\n    created_at: r.created_at,\n    cosine_distance: Number.isFinite(distance) ? distance : null,\n    similarity_score: similarity,\n  };\n});\n\nconst response = {\n  status: 'success',\n  mode: 'vector_cosine',\n  request_id: original.request_id,\n  query: original.query,\n  tenant_id: original.tenant_id,\n  scope: original.scope,\n  k: original.k,\n  policy: original.policy || null,\n  results_count: rankedResults.length,\n  results: rankedResults,\n  timestamp: new Date().toISOString()\n};\n\nreturn [{ json: response }];"
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,

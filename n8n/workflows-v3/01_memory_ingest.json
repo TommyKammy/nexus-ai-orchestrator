@@ -78,7 +78,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const crypto = require('crypto');\n\n// Validate input\nconst input = $input.first().json.body;\nconst normalizedText = String(input?.text || '').trim();\n\nif (!input?.tenant_id || !input?.scope || !normalizedText) {\n  return [{\n    json: {\n      error: 'Missing required fields: tenant_id, scope, text'\n    }\n  }];\n}\n\n// Secret patterns to reject\nconst secretPatterns = [\n  /api[_-]?key/i,\n  /bearer\\s+[A-Za-z0-9-_.]+/i,\n  /-----BEGIN(.*?)PRIVATE KEY-----/i\n];\n\n// Check for secrets in text\nif (secretPatterns.some((p) => p.test(normalizedText))) {\n  return [{\n    json: {\n      error: 'Rejected: potential secret detected in text'\n    }\n  }];\n}\n\n// Filter facts - only keep those with confidence >= 0.75 OR source == explicit\nconst filteredFacts = (input.facts || []).filter((f) => {\n  // Check for secrets in fact fields\n  const factText = `${f.subject || ''} ${f.predicate || ''} ${f.object || ''}`;\n  if (secretPatterns.some((p) => p.test(factText))) {\n    return false;\n  }\n\n  // Apply commit rules\n  if (f.confidence >= 0.75 || input.source === 'explicit') {\n    // Reject if subject/predicate/object empty\n    if (!f.subject || !f.predicate || !f.object) {\n      return false;\n    }\n    return true;\n  }\n  return false;\n});\n\nconst requestId = input.request_id || `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;\nconst source = String(input.source || 'unknown');\nconst tags = Array.isArray(input.tags) ? input.tags : [];\nconst metadata = (input.metadata && typeof input.metadata === 'object' && !Array.isArray(input.metadata))\n  ? input.metadata\n  : {};\nconst contentHash = crypto.createHash('sha256').update(normalizedText, 'utf8').digest('hex');\n\nreturn [{\n  json: {\n    tenant_id: input.tenant_id,\n    scope: input.scope,\n    text: normalizedText,\n    facts: filteredFacts,\n    source,\n    tags,\n    metadata,\n    request_id: requestId,\n    content_hash: contentHash\n  }\n}];"
+        "jsCode": "const sha256Hex = (value) => {\n  const rightRotate = (word, bits) => (word >>> bits) | (word << (32 - bits));\n  const K = [\n    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,\n    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,\n    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,\n    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,\n    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,\n    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,\n    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,\n    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,\n  ];\n  const hash = [\n    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,\n    0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,\n  ];\n  const encoded = unescape(encodeURIComponent(value));\n  const bytes = Array.from(encoded, (char) => char.charCodeAt(0));\n  const bitLength = bytes.length * 8;\n\n  bytes.push(0x80);\n  while ((bytes.length % 64) !== 56) {\n    bytes.push(0);\n  }\n\n  const highBits = Math.floor(bitLength / 0x100000000);\n  const lowBits = bitLength >>> 0;\n  bytes.push(\n    (highBits >>> 24) & 0xff,\n    (highBits >>> 16) & 0xff,\n    (highBits >>> 8) & 0xff,\n    highBits & 0xff,\n    (lowBits >>> 24) & 0xff,\n    (lowBits >>> 16) & 0xff,\n    (lowBits >>> 8) & 0xff,\n    lowBits & 0xff,\n  );\n\n  const schedule = new Array(64);\n  for (let offset = 0; offset < bytes.length; offset += 64) {\n    for (let index = 0; index < 16; index += 1) {\n      const byteOffset = offset + index * 4;\n      schedule[index] = (\n        (bytes[byteOffset] << 24)\n        | (bytes[byteOffset + 1] << 16)\n        | (bytes[byteOffset + 2] << 8)\n        | bytes[byteOffset + 3]\n      ) >>> 0;\n    }\n\n    for (let index = 16; index < 64; index += 1) {\n      const s0 = rightRotate(schedule[index - 15], 7) ^ rightRotate(schedule[index - 15], 18) ^ (schedule[index - 15] >>> 3);\n      const s1 = rightRotate(schedule[index - 2], 17) ^ rightRotate(schedule[index - 2], 19) ^ (schedule[index - 2] >>> 10);\n      schedule[index] = (schedule[index - 16] + s0 + schedule[index - 7] + s1) >>> 0;\n    }\n\n    let [a, b, c, d, e, f, g, h] = hash;\n\n    for (let index = 0; index < 64; index += 1) {\n      const s1 = rightRotate(e, 6) ^ rightRotate(e, 11) ^ rightRotate(e, 25);\n      const choice = (e & f) ^ (~e & g);\n      const temp1 = (h + s1 + choice + K[index] + schedule[index]) >>> 0;\n      const s0 = rightRotate(a, 2) ^ rightRotate(a, 13) ^ rightRotate(a, 22);\n      const majority = (a & b) ^ (a & c) ^ (b & c);\n      const temp2 = (s0 + majority) >>> 0;\n\n      h = g;\n      g = f;\n      f = e;\n      e = (d + temp1) >>> 0;\n      d = c;\n      c = b;\n      b = a;\n      a = (temp1 + temp2) >>> 0;\n    }\n\n    hash[0] = (hash[0] + a) >>> 0;\n    hash[1] = (hash[1] + b) >>> 0;\n    hash[2] = (hash[2] + c) >>> 0;\n    hash[3] = (hash[3] + d) >>> 0;\n    hash[4] = (hash[4] + e) >>> 0;\n    hash[5] = (hash[5] + f) >>> 0;\n    hash[6] = (hash[6] + g) >>> 0;\n    hash[7] = (hash[7] + h) >>> 0;\n  }\n\n  return hash.map((part) => part.toString(16).padStart(8, '0')).join('');\n};\n\n// Validate input\nconst input = $input.first().json.body;\nconst normalizedText = String(input?.text || '').trim();\n\nif (!input?.tenant_id || !input?.scope || !normalizedText) {\n  return [{\n    json: {\n      error: 'Missing required fields: tenant_id, scope, text'\n    }\n  }];\n}\n\n// Secret patterns to reject\nconst secretPatterns = [\n  /api[_-]?key/i,\n  /bearer\\s+[A-Za-z0-9-_.]+/i,\n  /-----BEGIN(.*?)PRIVATE KEY-----/i\n];\n\n// Check for secrets in text\nif (secretPatterns.some((p) => p.test(normalizedText))) {\n  return [{\n    json: {\n      error: 'Rejected: potential secret detected in text'\n    }\n  }];\n}\n\n// Filter facts - only keep those with confidence >= 0.75 OR source == explicit\nconst filteredFacts = (input.facts || []).filter((f) => {\n  // Check for secrets in fact fields\n  const factText = `${f.subject || ''} ${f.predicate || ''} ${f.object || ''}`;\n  if (secretPatterns.some((p) => p.test(factText))) {\n    return false;\n  }\n\n  // Apply commit rules\n  if (f.confidence >= 0.75 || input.source === 'explicit') {\n    // Reject if subject/predicate/object empty\n    if (!f.subject || !f.predicate || !f.object) {\n      return false;\n    }\n    return true;\n  }\n  return false;\n});\n\nconst requestId = input.request_id || `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;\nconst source = String(input.source || 'unknown');\nconst tags = Array.isArray(input.tags) ? input.tags : [];\nconst metadata = (input.metadata && typeof input.metadata === 'object' && !Array.isArray(input.metadata))\n  ? input.metadata\n  : {};\nconst contentHash = sha256Hex(normalizedText);\n\nreturn [{\n  json: {\n    tenant_id: input.tenant_id,\n    scope: input.scope,\n    text: normalizedText,\n    facts: filteredFacts,\n    source,\n    tags,\n    metadata,\n    request_id: requestId,\n    content_hash: contentHash\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
@@ -102,6 +102,36 @@
     },
     {
       "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "validation-error",
+              "leftValue": "={{ $json.status === 'error' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        760,
+        200
+      ],
+      "name": "Validation Error?"
+    },
+    {
+      "parameters": {
         "method": "POST",
         "url": "={{($env.OPA_URL || 'http://opa:8181') + '/v1/data/ai/policy/result'}}",
         "sendHeaders": true,
@@ -120,6 +150,7 @@
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "continueOnFail": true,
       "position": [
         850,
         400
@@ -140,8 +171,38 @@
     },
     {
       "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "policy-error",
+              "leftValue": "={{ $json.status === 'error' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        260
+      ],
+      "name": "Policy Error?"
+    },
+    {
+      "parameters": {
         "respondWith": "json",
-        "json": "={{ JSON.stringify({ status: \"error\", message: $input.first().json.message, request_id: $input.first().json.request_id || null, policy: $input.first().json.policy || null, approval: $input.first().json.approval || null }) }}"
+        "responseBody": "={{ ({ status: 'error', message: $input.first().json.message, request_id: $input.first().json.request_id || null, policy: $input.first().json.policy || null, approval: $input.first().json.approval || null }) }}"
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
@@ -153,25 +214,35 @@
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "INSERT INTO memory_facts (subject, predicate, object, confidence)\nSELECT fact.subject, fact.predicate, fact.object, fact.confidence\nFROM unnest($1::text[], $2::text[], $3::text[], $4::double precision[]) AS fact(subject, predicate, object, confidence);",
-        "additionalFields": {
-          "queryReplacement": "={{ [\n  ($input.first().json.facts || []).map(f => String(f.subject || '')),\n  ($input.first().json.facts || []).map(f => String(f.predicate || '')),\n  ($input.first().json.facts || []).map(f => String(f.object || '')),\n  ($input.first().json.facts || []).map(f => Number.isFinite(Number(f.confidence)) ? Number(f.confidence) : 0)\n] }}"
+        "method": "POST",
+        "url": "http://policy-bundle-server:8088/internal/tenant-data/memory/facts",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.POLICY_BUNDLE_INTERNAL_API_KEY || $env.N8N_WEBHOOK_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ facts: $input.first().json.facts || [] }) }}",
+        "options": {
+          "timeout": 30000
         }
       },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         1250,
         400
       ],
-      "name": "Insert Facts",
-      "credentials": {
-        "postgres": {
-          "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-          "name": "ai-postgres"
-        }
-      }
+      "name": "Insert Facts"
     },
     {
       "parameters": {
@@ -205,7 +276,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const fs = require('fs');\n\n// Load PCA model\nconst pca = JSON.parse(fs.readFileSync('/workspace/pca_model.json', 'utf8'));\n\nconst response = $input.first().json;\nconst embedding = response?.embedding?.values;\n\nif (!Array.isArray(embedding) || embedding.length === 0) {\n  throw new Error('Invalid embedding response from Gemini');\n}\n\n// PCA transformation\nconst mean = pca.mean;\nconst components = pca.components;\n\n// Center the embedding\nconst centered = embedding.map((v, i) => v - mean[i]);\n\n// Project onto principal components\nconst reduced = components.map(component =>\n  component.reduce((sum, weight, i) => sum + weight * centered[i], 0)\n);\n\nconst original = $('Check Validation').first().json;\n\nreturn [{\n  json: {\n    ...original,\n    embedding: `[${reduced.join(',')}]`\n  }\n}];"
+        "jsCode": "const fs = require('fs');\n\n// Load PCA model\nconst pca = JSON.parse(fs.readFileSync('/workspace/pca_model.json', 'utf8'));\n\nconst response = $input.first().json;\nconst embedding = response?.embedding?.values;\n\nif (!Array.isArray(embedding) || embedding.length === 0) {\n  throw new Error('Invalid embedding response from Gemini');\n}\n\n// PCA transformation\nconst mean = pca.mean;\nconst components = pca.components;\n\n// Center the embedding\nconst centered = embedding.map((v, i) => v - mean[i]);\n\n// Project onto principal components\nconst reduced = components.map(component =>\n  component.reduce((sum, weight, i) => sum + weight * centered[i], 0)\n);\n\nconst original = $('Check Policy').first().json;\n\nreturn [{\n  json: {\n    ...original,\n    embedding: `[${reduced.join(',')}]`\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
@@ -217,25 +288,39 @@
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "WITH tenant_context AS (SELECT set_config('app.current_tenant_id', $1, true) AS tenant_ctx)\nINSERT INTO memory_vectors (\n  tenant_id,\n  scope,\n  content,\n  embedding,\n  tags,\n  source,\n  content_hash,\n  metadata_jsonb,\n  created_at\n)\nSELECT\n  $1,\n  $2,\n  $3,\n  $4::vector,\n  $5::jsonb,\n  $6,\n  $7,\n  $8::jsonb,\n  NOW()\nFROM tenant_context\nON CONFLICT (tenant_id, scope, content_hash)\nWHERE content_hash IS NOT NULL\nDO UPDATE SET\n  content = EXCLUDED.content,\n  embedding = EXCLUDED.embedding,\n  tags = EXCLUDED.tags,\n  source = EXCLUDED.source,\n  metadata_jsonb = EXCLUDED.metadata_jsonb\nRETURNING id, content_hash;",
-        "additionalFields": {
-          "queryReplacement": "={{ [\n  $input.first().json.tenant_id,\n  $input.first().json.scope,\n  $input.first().json.text,\n  $input.first().json.embedding,\n  JSON.stringify($input.first().json.tags || []),\n  String($input.first().json.source || 'unknown'),\n  $input.first().json.content_hash,\n  JSON.stringify({\n    request_id: $input.first().json.request_id || null,\n    source: $input.first().json.source || 'unknown',\n    tags: $input.first().json.tags || [],\n    facts_count: Array.isArray($input.first().json.facts) ? $input.first().json.facts.length : 0,\n    metadata: $input.first().json.metadata || {},\n    policy: $input.first().json.policy || {}\n  })\n] }}"
+        "method": "POST",
+        "url": "http://policy-bundle-server:8088/internal/tenant-data/memory/vector",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Authenticated-Tenant-Id",
+              "value": "={{ $input.first().json.tenant_id }}"
+            },
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.POLICY_BUNDLE_INTERNAL_API_KEY || $env.N8N_WEBHOOK_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ tenant_id: $input.first().json.tenant_id, scope: $input.first().json.scope, text: $input.first().json.text, embedding: $input.first().json.embedding, tags: $input.first().json.tags || [], source: String($input.first().json.source || 'unknown'), content_hash: $input.first().json.content_hash, metadata_jsonb: { request_id: $input.first().json.request_id || null, source: $input.first().json.source || 'unknown', tags: $input.first().json.tags || [], facts_count: Array.isArray($input.first().json.facts) ? $input.first().json.facts.length : 0, metadata: $input.first().json.metadata || {}, policy: $input.first().json.policy || {} } }) }}",
+        "options": {
+          "timeout": 30000
         }
       },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         1850,
         400
       ],
-      "name": "Insert Vector",
-      "credentials": {
-        "postgres": {
-          "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-          "name": "ai-postgres"
-        }
-      }
+      "name": "Insert Vector"
     },
     {
       "parameters": {
@@ -251,25 +336,39 @@
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "INSERT INTO audit_events (actor, action, target, decision, payload_jsonb, created_at)\nVALUES ($1, $2, $3, $4, $5::jsonb, NOW());",
-        "additionalFields": {
-          "queryReplacement": "={{ [\n  'workflow:memory_ingest',\n  'memory_write',\n  $input.first().json.scope,\n  $input.first().json.policy?.decision || 'allow',\n  JSON.stringify({\n    request_id: $input.first().json.request_id || '',\n    policy: $input.first().json.policy || {}\n  })\n] }}"
+        "method": "POST",
+        "url": "http://policy-bundle-server:8088/internal/tenant-data/audit/event",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Authenticated-Tenant-Id",
+              "value": "={{ $input.first().json.tenant_id }}"
+            },
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.POLICY_BUNDLE_INTERNAL_API_KEY || $env.N8N_WEBHOOK_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ actor: 'workflow:memory_ingest', action: 'memory_write', target: $input.first().json.scope, decision: $input.first().json.policy?.decision || 'allow', payload_jsonb: { tenant_id: $input.first().json.tenant_id, request_id: $input.first().json.request_id || '', policy: $input.first().json.policy || {} } }) }}",
+        "options": {
+          "timeout": 30000
         }
       },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         2150,
         400
       ],
-      "name": "Insert Audit",
-      "credentials": {
-        "postgres": {
-          "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-          "name": "ai-postgres"
-        }
-      }
+      "name": "Insert Audit"
     },
     {
       "parameters": {
@@ -312,12 +411,7 @@
       "main": [
         [
           {
-            "node": "Error Response",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Evaluate Policy",
+            "node": "Validation Error?",
             "type": "main",
             "index": 0
           }
@@ -339,10 +433,41 @@
       "main": [
         [
           {
+            "node": "Policy Error?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validation Error?": {
+      "main": [
+        [
+          {
             "node": "Error Response",
             "type": "main",
             "index": 0
-          },
+          }
+        ],
+        [
+          {
+            "node": "Evaluate Policy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Policy Error?": {
+      "main": [
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
           {
             "node": "Insert Facts",
             "type": "main",

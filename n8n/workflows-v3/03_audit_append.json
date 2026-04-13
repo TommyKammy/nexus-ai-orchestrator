@@ -214,25 +214,39 @@
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "INSERT INTO audit_events (\n  actor,\n  action,\n  target,\n  decision,\n  payload_jsonb,\n  request_id,\n  policy_id,\n  policy_version,\n  policy_reason,\n  risk_score,\n  created_at\n)\nVALUES (\n  $1,\n  $2,\n  $3,\n  $4,\n  $5::jsonb,\n  $6,\n  $7,\n  $8,\n  $9,\n  $10,\n  NOW()\n)\nRETURNING id, request_id, created_at;",
-        "additionalFields": {
-          "queryReplacement": "={{ [\n  $input.first().json.actor,\n  $input.first().json.action,\n  $input.first().json.target,\n  $input.first().json.decision,\n  JSON.stringify({\n    ...($input.first().json.payload || {}),\n    policy: $input.first().json.policy || {}\n  }),\n  $input.first().json.request_id,\n  $input.first().json.policy?.policy_id || $input.first().json.policy_id,\n  $input.first().json.policy?.policy_version || $input.first().json.policy_version,\n  Array.isArray($input.first().json.policy?.reasons)\n    ? $input.first().json.policy.reasons.join('; ')\n    : $input.first().json.policy_reason,\n  Number.isFinite(Number($input.first().json.policy?.risk_score))\n    ? Math.round(Number($input.first().json.policy.risk_score))\n    : $input.first().json.risk_score\n] }}"
+        "method": "POST",
+        "url": "http://policy-bundle-server:8088/internal/tenant-data/audit/event",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Authenticated-Tenant-Id",
+              "value": "={{ (($input.first().json.payload || {}).tenant_id || '') }}"
+            },
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.POLICY_BUNDLE_INTERNAL_API_KEY || $env.N8N_WEBHOOK_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ actor: $input.first().json.actor, action: $input.first().json.action, target: $input.first().json.target, decision: $input.first().json.decision, payload_jsonb: { ...($input.first().json.payload || {}), policy: $input.first().json.policy || {} }, request_id: $input.first().json.request_id, policy_id: $input.first().json.policy?.policy_id || $input.first().json.policy_id, policy_version: $input.first().json.policy?.policy_version || $input.first().json.policy_version, policy_reason: Array.isArray($input.first().json.policy?.reasons) ? $input.first().json.policy.reasons.join('; ') : $input.first().json.policy_reason, risk_score: Number.isFinite(Number($input.first().json.policy?.risk_score)) ? Math.round(Number($input.first().json.policy.risk_score)) : $input.first().json.risk_score }) }}",
+        "options": {
+          "timeout": 30000
         }
       },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         1250,
         400
       ],
-      "name": "Insert Audit",
-      "credentials": {
-        "postgres": {
-          "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-          "name": "ai-postgres"
-        }
-      }
+      "name": "Insert Audit"
     },
     {
       "parameters": {

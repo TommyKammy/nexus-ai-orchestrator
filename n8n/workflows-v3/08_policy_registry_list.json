@@ -78,27 +78,40 @@
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "SELECT workflow_id, task_type, tenant_id, scope_pattern, constraints_jsonb, enabled, updated_at FROM policy_workflows ORDER BY updated_at DESC LIMIT 500;"
+        "method": "POST",
+        "url": "http://policy-bundle-server:8088/internal/tenant-data/policy/workflow/list",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.POLICY_BUNDLE_INTERNAL_API_KEY || $env.N8N_WEBHOOK_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({}) }}",
+        "options": {
+          "timeout": 30000
+        }
       },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         500,
         300
       ],
-      "name": "List Workflow Rules",
-      "credentials": {
-        "postgres": {
-          "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-          "name": "ai-postgres"
-        }
-      }
+      "name": "List Workflow Rules"
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ ({ status: 'ok', items: $input.all().map(i => i.json), count: $input.all().length }) }}"
+        "responseBody": "={{ (() => { const first = $('List Workflow Rules').first().json || {}; const items = Array.isArray(first.items) ? first.items : $('List Workflow Rules').all().map(i => i.json); return { status: 'ok', items, count: items.length }; })() }}"
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,

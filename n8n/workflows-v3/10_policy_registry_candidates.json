@@ -78,64 +78,103 @@
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "WITH wf AS ( SELECT DISTINCT name AS workflow_id FROM workflow_entity WHERE COALESCE(active, true) = true ), unregistered AS ( SELECT wf.workflow_id FROM wf WHERE NOT EXISTS ( SELECT 1 FROM policy_workflows pw WHERE pw.workflow_id = wf.workflow_id ) ) SELECT workflow_id FROM unregistered ORDER BY workflow_id LIMIT 300;"
+        "method": "POST",
+        "url": "http://policy-bundle-server:8088/internal/tenant-data/policy/candidates/workflows",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.POLICY_BUNDLE_INTERNAL_API_KEY || $env.N8N_WEBHOOK_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({}) }}",
+        "options": {
+          "timeout": 30000
+        }
       },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         520,
         240
       ],
-      "name": "Get Unregistered Workflow IDs",
-      "credentials": {
-        "postgres": {
-          "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-          "name": "ai-postgres"
-        }
-      }
+      "name": "Get Unregistered Workflow IDs"
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "WITH task_raw AS ( SELECT DISTINCT task_type FROM policy_candidate_events WHERE task_type IS NOT NULL ), unregistered AS ( SELECT tr.task_type FROM task_raw tr WHERE NOT EXISTS ( SELECT 1 FROM policy_workflows pw WHERE pw.task_type = tr.task_type ) ) SELECT task_type FROM unregistered ORDER BY task_type LIMIT 300;"
+        "method": "POST",
+        "url": "http://policy-bundle-server:8088/internal/tenant-data/policy/candidates/tasks/unregistered",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.POLICY_BUNDLE_INTERNAL_API_KEY || $env.N8N_WEBHOOK_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({}) }}",
+        "options": {
+          "timeout": 30000
+        }
       },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         740,
         360
       ],
-      "name": "Get Unregistered Task Types",
-      "credentials": {
-        "postgres": {
-          "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-          "name": "ai-postgres"
-        }
-      }
+      "name": "Get Unregistered Task Types"
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "SELECT DISTINCT task_type FROM policy_workflows ORDER BY task_type LIMIT 300;"
+        "method": "POST",
+        "url": "http://policy-bundle-server:8088/internal/tenant-data/policy/candidates/tasks/policy",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.POLICY_BUNDLE_INTERNAL_API_KEY || $env.N8N_WEBHOOK_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({}) }}",
+        "options": {
+          "timeout": 30000
+        }
       },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         740,
         460
       ],
-      "name": "Get Policy Task Types",
-      "credentials": {
-        "postgres": {
-          "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-          "name": "ai-postgres"
-        }
-      }
+      "name": "Get Policy Task Types"
     },
     {
       "parameters": {
-        "jsCode": "const workflowRows = $('Get Unregistered Workflow IDs').all().map(i => i.json);\nconst taskRows = $('Get Unregistered Task Types').all().map(i => i.json);\nconst policyTaskRows = $('Get Policy Task Types').all().map(i => i.json);\n\nconst uniq = (arr) => Array.from(new Set(arr.filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b)));\n\nconst workflow_ids = uniq(workflowRows.map(r => String(r.workflow_id || '').trim()));\nconst workflow_task_types = uniq(taskRows.map(r => String(r.task_type || '').trim()));\nconst policy_task_types = uniq(policyTaskRows.map(r => String(r.task_type || '').trim()));\n\nreturn [{\n  json: {\n    status: 'ok',\n    workflow_ids,\n    task_types: {\n      workflow: workflow_task_types,\n      policy: policy_task_types\n    },\n    counts: {\n      workflow_ids: workflow_ids.length,\n      task_types_workflow: workflow_task_types.length,\n      task_types_policy: policy_task_types.length\n    }\n  }\n}];"
+        "jsCode": "const normalizeRows = (nodeName) => $('' + nodeName).all().flatMap((item) => {\n  const json = item.json;\n  if (Array.isArray(json?.items)) {\n    return json.items;\n  }\n  if (Array.isArray(json)) {\n    return json;\n  }\n  return json ? [json] : [];\n});\n\nconst workflowRows = normalizeRows('Get Unregistered Workflow IDs');\nconst taskRows = normalizeRows('Get Unregistered Task Types');\nconst policyTaskRows = normalizeRows('Get Policy Task Types');\n\nconst uniq = (arr) => Array.from(new Set(arr.filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b)));\n\nconst workflow_ids = uniq(workflowRows.map(r => String(r.workflow_id || '').trim()));\nconst workflow_task_types = uniq(taskRows.map(r => String(r.task_type || '').trim()));\nconst policy_task_types = uniq(policyTaskRows.map(r => String(r.task_type || '').trim()));\n\nreturn [{\n  json: {\n    status: 'ok',\n    workflow_ids,\n    task_types: {\n      workflow: workflow_task_types,\n      policy: policy_task_types\n    },\n    counts: {\n      workflow_ids: workflow_ids.length,\n      task_types_workflow: workflow_task_types.length,\n      task_types_policy: policy_task_types.length\n    }\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,

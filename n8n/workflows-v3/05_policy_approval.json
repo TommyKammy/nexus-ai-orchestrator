@@ -133,25 +133,35 @@
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "INSERT INTO audit_events (\n  actor,\n  action,\n  target,\n  decision,\n  payload_jsonb,\n  request_id,\n  policy_id,\n  policy_version,\n  policy_reason,\n  risk_score,\n  created_at\n)\nVALUES (\n  $1,\n  'policy_approval',\n  $2,\n  $3,\n  $4::jsonb,\n  $5,\n  $6,\n  $7,\n  $8,\n  $9,\n  NOW()\n)\nRETURNING id, request_id, created_at;",
-        "additionalFields": {
-          "queryReplacement": "={{ [\n  'approver:' + $input.first().json.approver,\n  $input.first().json.request_id,\n  $input.first().json.auditDecision,\n  JSON.stringify({\n    request_id: $input.first().json.request_id,\n    policy_id: $input.first().json.policy_id,\n    policy_version: $input.first().json.policy_version,\n    comment: $input.first().json.comment,\n    approved_at: $input.first().json.approved_at,\n    decision: $input.first().json.decision,\n    policy: $input.first().json.policy || {},\n    approval: $input.first().json.approval || {}\n  }),\n  $input.first().json.request_id,\n  $input.first().json.policy_id,\n  $input.first().json.policy_version,\n  $input.first().json.policy_reason,\n  $input.first().json.risk_score\n] }}"
+        "method": "POST",
+        "url": "http://policy-bundle-server:8088/internal/tenant-data/audit/event",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.POLICY_BUNDLE_INTERNAL_API_KEY || $env.N8N_WEBHOOK_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ actor: 'approver:' + $input.first().json.approver, action: 'policy_approval', target: $input.first().json.request_id, decision: $input.first().json.auditDecision, payload_jsonb: { request_id: $input.first().json.request_id, policy_id: $input.first().json.policy_id, policy_version: $input.first().json.policy_version, comment: $input.first().json.comment, approved_at: $input.first().json.approved_at, decision: $input.first().json.decision, policy: $input.first().json.policy || {}, approval: $input.first().json.approval || {} }, request_id: $input.first().json.request_id, policy_id: $input.first().json.policy_id, policy_version: $input.first().json.policy_version, policy_reason: $input.first().json.policy_reason, risk_score: $input.first().json.risk_score }) }}",
+        "options": {
+          "timeout": 30000
         }
       },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         920,
         360
       ],
-      "name": "Insert Approval Audit",
-      "credentials": {
-        "postgres": {
-          "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-          "name": "ai-postgres"
-        }
-      }
+      "name": "Insert Approval Audit"
     },
     {
       "parameters": {

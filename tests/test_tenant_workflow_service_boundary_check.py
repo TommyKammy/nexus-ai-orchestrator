@@ -135,6 +135,13 @@ class TenantWorkflowServiceBoundaryTests(unittest.TestCase):
         self.assertEqual(from_outside.stdout, from_repo_root.stdout)
         self.assertEqual(from_outside.stderr, from_repo_root.stderr)
 
+    def test_repository_target_workflows_do_not_embed_postgres_nodes(self):
+        repo_root = Path(__file__).resolve().parents[1]
+
+        errors = tenant_workflow_service_boundary.validate_repo(repo_root)
+
+        self.assertEqual(errors, [])
+
 
 if __name__ == "__main__":
     unittest.main()

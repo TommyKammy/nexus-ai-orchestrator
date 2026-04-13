@@ -64,10 +64,12 @@ class PolicyBundleServerTests(unittest.TestCase):
         self.original_runtime_dir = policy_bundle_server.POLICY_RUNTIME_DIR
         self.original_registry_path = policy_bundle_server.RUNTIME_REGISTRY_PATH
         self.original_publish_api_key = getattr(policy_bundle_server, "PUBLISH_API_KEY", None)
+        self.original_internal_api_key = getattr(policy_bundle_server, "INTERNAL_API_KEY", None)
 
         policy_bundle_server.POLICY_SOURCE_DIR = str(self.source_dir)
         policy_bundle_server.POLICY_RUNTIME_DIR = str(self.runtime_dir)
         policy_bundle_server.RUNTIME_REGISTRY_PATH = str(self.registry_path)
+        policy_bundle_server.INTERNAL_API_KEY = "internal-secret"
 
         self.addCleanup(self._restore_module_globals)
 
@@ -79,6 +81,10 @@ class PolicyBundleServerTests(unittest.TestCase):
             delattr(policy_bundle_server, "PUBLISH_API_KEY")
         else:
             policy_bundle_server.PUBLISH_API_KEY = self.original_publish_api_key
+        if self.original_internal_api_key is None and hasattr(policy_bundle_server, "INTERNAL_API_KEY"):
+            delattr(policy_bundle_server, "INTERNAL_API_KEY")
+        else:
+            policy_bundle_server.INTERNAL_API_KEY = self.original_internal_api_key
 
     def test_registry_publish_requires_api_key(self):
         policy_bundle_server.PUBLISH_API_KEY = "publish-secret"
@@ -178,6 +184,167 @@ class PolicyBundleServerTests(unittest.TestCase):
         self.assertEqual(status, 401)
         self.assertEqual(payload["ok"], False)
         self.assertEqual(payload["error"], "Unauthorized")
+
+    def test_internal_tenant_data_route_requires_matching_authenticated_tenant(self):
+        route_path = "/internal/tenant-data/memory/vector"
+        original_route = dict(policy_bundle_server.INTERNAL_POST_ROUTES[route_path])
+        called = {"value": False}
+
+        def _fake_handler(payload, *, tenant_id=None):
+            called["value"] = True
+            return {"tenant_id": tenant_id, "content_hash": payload.get("content_hash")}
+
+        policy_bundle_server.INTERNAL_POST_ROUTES[route_path] = {
+            **original_route,
+            "handler": _fake_handler,
+        }
+        self.addCleanup(
+            policy_bundle_server.INTERNAL_POST_ROUTES.__setitem__,
+            route_path,
+            original_route,
+        )
+
+        server, thread = _start_server()
+        self.addCleanup(server.shutdown)
+        self.addCleanup(server.server_close)
+        self.addCleanup(thread.join, 2)
+
+        status, payload = _post_json(
+            server.server_port,
+            route_path,
+            {
+                "tenant_id": "tenant-a",
+                "scope": "scope-a",
+                "text": "hello",
+                "embedding": "[0.1,0.2]",
+                "content_hash": "abc123",
+            },
+            headers={"X-API-Key": "internal-secret"},
+        )
+
+        self.assertEqual(status, 403)
+        self.assertEqual(payload["ok"], False)
+        self.assertIn("missing authenticated tenant identity", payload["error"])
+        self.assertFalse(called["value"])
+
+    def test_internal_tenant_data_route_accepts_matching_authenticated_tenant(self):
+        route_path = "/internal/tenant-data/memory/vector"
+        original_route = dict(policy_bundle_server.INTERNAL_POST_ROUTES[route_path])
+
+        def _fake_handler(payload, *, tenant_id=None):
+            return {"tenant_id": tenant_id, "content_hash": payload.get("content_hash")}
+
+        policy_bundle_server.INTERNAL_POST_ROUTES[route_path] = {
+            **original_route,
+            "handler": _fake_handler,
+        }
+        self.addCleanup(
+            policy_bundle_server.INTERNAL_POST_ROUTES.__setitem__,
+            route_path,
+            original_route,
+        )
+
+        server, thread = _start_server()
+        self.addCleanup(server.shutdown)
+        self.addCleanup(server.server_close)
+        self.addCleanup(thread.join, 2)
+
+        status, payload = _post_json(
+            server.server_port,
+            route_path,
+            {
+                "tenant_id": "tenant-a",
+                "scope": "scope-a",
+                "text": "hello",
+                "embedding": "[0.1,0.2]",
+                "content_hash": "abc123",
+            },
+            headers={
+                "X-API-Key": "internal-secret",
+                policy_bundle_server.AUTHENTICATED_TENANT_HEADER: "tenant-a",
+            },
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["tenant_id"], "tenant-a")
+        self.assertEqual(payload["content_hash"], "abc123")
+
+    def test_internal_audit_route_rejects_conflicting_optional_tenant_identity(self):
+        route_path = "/internal/tenant-data/audit/event"
+        original_route = dict(policy_bundle_server.INTERNAL_POST_ROUTES[route_path])
+        called = {"value": False}
+
+        def _fake_handler(payload, *, tenant_id=None):
+            called["value"] = True
+            return {"tenant_id": tenant_id}
+
+        policy_bundle_server.INTERNAL_POST_ROUTES[route_path] = {
+            **original_route,
+            "handler": _fake_handler,
+        }
+        self.addCleanup(
+            policy_bundle_server.INTERNAL_POST_ROUTES.__setitem__,
+            route_path,
+            original_route,
+        )
+
+        server, thread = _start_server()
+        self.addCleanup(server.shutdown)
+        self.addCleanup(server.server_close)
+        self.addCleanup(thread.join, 2)
+
+        status, payload = _post_json(
+            server.server_port,
+            route_path,
+            {
+                "actor": "workflow:test",
+                "action": "audit",
+                "target": "scope-a",
+                "decision": "allowed",
+                "payload_jsonb": {"request_id": "req-1"},
+                "payload": {"tenant_id": "tenant-a"},
+            },
+            headers={
+                "X-API-Key": "internal-secret",
+                policy_bundle_server.AUTHENTICATED_TENANT_HEADER: "tenant-b",
+            },
+        )
+
+        self.assertEqual(status, 403)
+        self.assertEqual(payload["ok"], False)
+        self.assertIn("does not match", payload["error"])
+        self.assertFalse(called["value"])
+
+    def test_internal_tenant_data_route_requires_internal_api_key(self):
+        route_path = "/internal/tenant-data/policy/workflow/list"
+        original_route = dict(policy_bundle_server.INTERNAL_POST_ROUTES[route_path])
+        called = {"value": False}
+
+        def _fake_handler(payload, *, tenant_id=None):
+            called["value"] = True
+            return {"items": []}
+
+        policy_bundle_server.INTERNAL_POST_ROUTES[route_path] = {
+            **original_route,
+            "handler": _fake_handler,
+        }
+        self.addCleanup(
+            policy_bundle_server.INTERNAL_POST_ROUTES.__setitem__,
+            route_path,
+            original_route,
+        )
+
+        server, thread = _start_server()
+        self.addCleanup(server.shutdown)
+        self.addCleanup(server.server_close)
+        self.addCleanup(thread.join, 2)
+
+        status, payload = _post_json(server.server_port, route_path, {})
+
+        self.assertEqual(status, 401)
+        self.assertEqual(payload["ok"], False)
+        self.assertEqual(payload["error"], "Unauthorized")
+        self.assertFalse(called["value"])
 
 
 if __name__ == "__main__":

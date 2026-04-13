@@ -13,6 +13,7 @@ fi
 
 POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-}"
 N8N_WEBHOOK_API_KEY="${N8N_WEBHOOK_API_KEY:-ci-local-webhook-key}"
+POLICY_BUNDLE_INTERNAL_API_KEY="${POLICY_BUNDLE_INTERNAL_API_KEY:-$N8N_WEBHOOK_API_KEY}"
 N8N_ENCRYPTION_KEY="${N8N_ENCRYPTION_KEY:-ci-local-encryption-key-32chars}"
 SLACK_SIGNING_SECRET="${SLACK_SIGNING_SECRET:-ci-local-slack-signing-secret}"
 
@@ -22,6 +23,7 @@ if [[ -z "$POSTGRES_PASSWORD" ]]; then
 fi
 
 export N8N_WEBHOOK_API_KEY
+export POLICY_BUNDLE_INTERNAL_API_KEY
 export N8N_ENCRYPTION_KEY
 export SLACK_SIGNING_SECRET
 
@@ -161,9 +163,6 @@ cat >"${TMP_DIR}/patch_01.jq" <<'JQ'
     }
     | del(.credentials)
   )
-| (.connections["Check Validation"].main[0]) = [{"node":"Evaluate Policy","type":"main","index":0}]
-| (.connections["Check Policy"].main[0]) = [{"node":"Insert Facts","type":"main","index":0}]
-| (.nodes[] | select(.name=="Validate and Filter") | .parameters.jsCode) = "const input = $input.first().json.body || {}; const tenantId = String(input.tenant_id || '').trim(); const scope = String(input.scope || '').trim(); const text = String(input.text || '').trim(); const facts = Array.isArray(input.facts) ? input.facts : []; const tags = Array.isArray(input.tags) ? input.tags : []; const source = String(input.source || 'unknown'); if (!tenantId || !scope || !text) { return [{ json: { error: 'Missing required fields: tenant_id, scope, text' } }]; } return [{ json: { tenant_id: tenantId, scope, text, facts: facts.map((f)=>({subject:String(f.subject||'').trim(),predicate:String(f.predicate||'').trim(),object:String(f.object||'').trim(),confidence:Number.isFinite(Number(f.confidence))?Number(f.confidence):1})).filter((f)=>f.subject&&f.predicate&&f.object), tags, source, content_hash: null, request_id: null } }];"
 | (.nodes[] | select(.name=="Generate Embedding")) |= (
     .type = "n8n-nodes-base.code"
     | .typeVersion = 1

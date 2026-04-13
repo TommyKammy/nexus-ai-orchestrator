@@ -12,6 +12,7 @@ This runbook covers operational steps for policy registry workflows:
 - n8n workflows are imported and published
 - `policy_workflows`, `policy_revisions`, `policy_publish_logs` tables exist
 - `policy-bundle-server` and `opa` services are healthy
+- `policy-bundle-server` has database access configured for its internal tenant data endpoints (`POLICY_REGISTRY_DB_*`)
 - Caddy webhook API key is available (`X-API-Key`)
 - Policy bundle publish API key is configured on `policy-bundle-server` (`POLICY_BUNDLE_PUBLISH_API_KEY`)
 - Baseline policy includes `security_digest_mail` in `policy/opa/data.json`
@@ -101,6 +102,7 @@ Query policy decision endpoint and confirm expected decision.
 - Use unique `revision_id` for traceability.
 - Keep `actor` and `notes` meaningful for audit trails.
 - Avoid manual file copy deployments (`/tmp -> /opt`). Use git-based host update flow.
+- Guarded v3 registry workflows now orchestrate HTTP calls to `policy-bundle-server` for database-owned registry reads/writes; direct `Postgres` nodes are reserved for legacy workflows outside that guard.
 
 ## Lightweight UI (Week3-Day1)
 - URL: `https://<host>/policy-ui/`

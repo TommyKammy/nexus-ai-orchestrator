@@ -49,8 +49,12 @@ check_workflow() {
   local policy_true_target
   local policy_false_target
   local query
+  local audit_url
+  local audit_headers
+  local audit_body
   local query_replacement
   local response_json
+  local is_service_boundary
 
   for node_name in "${required_nodes[@]}"; do
     if ! jq -e --arg node_name "$node_name" '.nodes[] | select(.name == $node_name)' "$workflow_path" >/dev/null; then
@@ -66,7 +70,11 @@ check_workflow() {
   validation_false_target="$(jq -r '.connections["Validation Error?"].main[1][0].node // empty' "$workflow_path")"
   policy_true_target="$(jq -r '.connections["Policy Error?"].main[0][0].node // empty' "$workflow_path")"
   policy_false_target="$(jq -r '.connections["Policy Error?"].main[1][0].node // empty' "$workflow_path")"
+  is_service_boundary="$(jq -r '.nodes[] | select(.name == "Insert Audit") | .type == "n8n-nodes-base.httpRequest"' "$workflow_path")"
   query="$(jq -r '.nodes[] | select(.name == "Insert Audit") | .parameters.query' "$workflow_path")"
+  audit_url="$(jq -r '.nodes[] | select(.name == "Insert Audit") | .parameters.url' "$workflow_path")"
+  audit_headers="$(jq -c '.nodes[] | select(.name == "Insert Audit") | .parameters.headerParameters.parameters // []' "$workflow_path")"
+  audit_body="$(jq -r '.nodes[] | select(.name == "Insert Audit") | .parameters.jsonBody' "$workflow_path")"
   query_replacement="$(jq -r '.nodes[] | select(.name == "Insert Audit") | .parameters.additionalFields.queryReplacement' "$workflow_path")"
   response_json="$(jq -r '.nodes[] | select(.name == "Success Response") | .parameters.json' "$workflow_path")"
 
@@ -97,16 +105,37 @@ check_workflow() {
     fi
   done
 
-  for pattern in "${query_patterns[@]}"; do
-    if ! grep -Fq "$pattern" <<< "$query"; then
-      echo "Missing '${pattern}' in Insert Audit query for ${workflow_path}" >&2
+  if [[ "$is_service_boundary" == "true" ]]; then
+    if [[ "$audit_url" != "http://policy-bundle-server:8088/internal/tenant-data/audit/event" ]]; then
+      echo "Insert Audit must call the audit service in ${workflow_path}" >&2
       exit 1
     fi
-  done
+    if ! grep -Fq "X-Authenticated-Tenant-Id" <<<"$audit_headers"; then
+      echo "Insert Audit must forward X-Authenticated-Tenant-Id in ${workflow_path}" >&2
+      exit 1
+    fi
+    if ! grep -Fq "X-API-Key" <<<"$audit_headers"; then
+      echo "Insert Audit must forward X-API-Key in ${workflow_path}" >&2
+      exit 1
+    fi
+    for pattern in "payload_jsonb" "request_id" "policy_id" "policy_version" "risk_score"; do
+      if ! grep -Fq "$pattern" <<<"$audit_body"; then
+        echo "Insert Audit request body is missing '${pattern}' in ${workflow_path}" >&2
+        exit 1
+      fi
+    done
+  else
+    for pattern in "${query_patterns[@]}"; do
+      if ! grep -Fq "$pattern" <<< "$query"; then
+        echo "Missing '${pattern}' in Insert Audit query for ${workflow_path}" >&2
+        exit 1
+      fi
+    done
 
-  if [[ -z "$query_replacement" || "$query_replacement" == "null" ]]; then
-    echo "Missing Insert Audit queryReplacement for ${workflow_path}" >&2
-    exit 1
+    if [[ -z "$query_replacement" || "$query_replacement" == "null" ]]; then
+      echo "Missing Insert Audit queryReplacement for ${workflow_path}" >&2
+      exit 1
+    fi
   fi
 
   for pattern in "${response_patterns[@]}"; do

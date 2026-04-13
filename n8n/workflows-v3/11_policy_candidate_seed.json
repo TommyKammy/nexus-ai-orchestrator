@@ -138,25 +138,39 @@
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "INSERT INTO policy_candidate_events (task_type, tenant_id, scope, source)\nVALUES ($1, $2, $3, $4)\nRETURNING id, task_type, tenant_id, scope, created_at;",
-        "additionalFields": {
-          "queryReplacement": "={{ [\n  $json.task_type,\n  $json.tenant_id,\n  $json.scope,\n  $json.metadata.source || '11_policy_candidate_seed'\n] }}"
+        "method": "POST",
+        "url": "http://policy-bundle-server:8088/internal/tenant-data/policy/candidate-event",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Authenticated-Tenant-Id",
+              "value": "={{ $json.tenant_id }}"
+            },
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.POLICY_BUNDLE_INTERNAL_API_KEY || $env.N8N_WEBHOOK_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ task_type: $json.task_type, tenant_id: $json.tenant_id, scope: $json.scope, source: $json.metadata.source || '11_policy_candidate_seed' }) }}",
+        "options": {
+          "timeout": 30000
         }
       },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         980,
         340
       ],
-      "name": "Insert Seed Episode",
-      "credentials": {
-        "postgres": {
-          "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-          "name": "ai-postgres"
-        }
-      }
+      "name": "Insert Seed Episode"
     },
     {
       "parameters": {

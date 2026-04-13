@@ -22,21 +22,35 @@ check_workflow() {
   local webhook_path
   local policy_url
   local episode_query
+  local episode_url
+  local episode_headers
+  local episode_body
   local episode_replacement
   local audit_query
+  local audit_url
+  local audit_headers
+  local audit_body
   local audit_replacement
   local success_response
   local validation_true_target
   local validation_false_target
   local brain_workflow_id
   local brain_workflow_file
+  local is_service_boundary
 
   workflow_dir="$(dirname "$workflow_path")"
   webhook_path="$(jq -r '.nodes[] | select(.name == "Webhook") | .parameters.path' "$workflow_path")"
   policy_url="$(jq -r '.nodes[] | select(.name == "Evaluate Policy") | .parameters.url' "$workflow_path")"
+  is_service_boundary="$(jq -r '.nodes[] | select(.name == "Insert Episode") | .type == "n8n-nodes-base.httpRequest"' "$workflow_path")"
   episode_query="$(jq -r '.nodes[] | select(.name == "Insert Episode") | .parameters.query' "$workflow_path")"
+  episode_url="$(jq -r '.nodes[] | select(.name == "Insert Episode") | .parameters.url' "$workflow_path")"
+  episode_headers="$(jq -c '.nodes[] | select(.name == "Insert Episode") | .parameters.headerParameters.parameters // []' "$workflow_path")"
+  episode_body="$(jq -r '.nodes[] | select(.name == "Insert Episode") | .parameters.jsonBody' "$workflow_path")"
   episode_replacement="$(jq -r '.nodes[] | select(.name == "Insert Episode") | .parameters.additionalFields.queryReplacement' "$workflow_path")"
   audit_query="$(jq -r '.nodes[] | select(.name == "Insert Audit") | .parameters.query' "$workflow_path")"
+  audit_url="$(jq -r '.nodes[] | select(.name == "Insert Audit") | .parameters.url' "$workflow_path")"
+  audit_headers="$(jq -c '.nodes[] | select(.name == "Insert Audit") | .parameters.headerParameters.parameters // []' "$workflow_path")"
+  audit_body="$(jq -r '.nodes[] | select(.name == "Insert Audit") | .parameters.jsonBody' "$workflow_path")"
   audit_replacement="$(jq -r '.nodes[] | select(.name == "Insert Audit") | .parameters.additionalFields.queryReplacement' "$workflow_path")"
   success_response="$(jq -r '.nodes[] | select(.name == "Success Response") | (.parameters.responseBody // .parameters.json // "")' "$workflow_path")"
   validation_true_target="$(jq -r '.connections["Validation Error?"].main[0][0].node // empty' "$workflow_path")"
@@ -66,22 +80,62 @@ check_workflow() {
     exit 1
   fi
 
-  if ! grep -Fq '$1' <<<"$episode_query" || ! grep -Fq '$4::jsonb' <<<"$episode_query"; then
-    echo "Insert Episode query must be parameterized in ${workflow_path}" >&2
-    exit 1
-  fi
-  if [[ -z "$episode_replacement" || "$episode_replacement" == "null" ]]; then
-    echo "Insert Episode queryReplacement missing in ${workflow_path}" >&2
-    exit 1
-  fi
+  if [[ "$is_service_boundary" == "true" ]]; then
+    if [[ "$episode_url" != "http://policy-bundle-server:8088/internal/tenant-data/memory/episode" ]]; then
+      echo "Insert Episode must call the memory episode service in ${workflow_path}" >&2
+      exit 1
+    fi
+    if ! grep -Fq "X-Authenticated-Tenant-Id" <<<"$episode_headers"; then
+      echo "Insert Episode must forward X-Authenticated-Tenant-Id in ${workflow_path}" >&2
+      exit 1
+    fi
+    if ! grep -Fq "X-API-Key" <<<"$episode_headers"; then
+      echo "Insert Episode must forward X-API-Key in ${workflow_path}" >&2
+      exit 1
+    fi
+    for pattern in "tenant_id" "scope" "outcome" "metadata_jsonb"; do
+      if ! grep -Fq "$pattern" <<<"$episode_body"; then
+        echo "Insert Episode request body is missing '${pattern}' in ${workflow_path}" >&2
+        exit 1
+      fi
+    done
 
-  if ! grep -Fq '$1' <<<"$audit_query" || ! grep -Fq '$8' <<<"$audit_query"; then
-    echo "Insert Audit query must be parameterized in ${workflow_path}" >&2
-    exit 1
-  fi
-  if [[ -z "$audit_replacement" || "$audit_replacement" == "null" ]]; then
-    echo "Insert Audit queryReplacement missing in ${workflow_path}" >&2
-    exit 1
+    if [[ "$audit_url" != "http://policy-bundle-server:8088/internal/tenant-data/audit/event" ]]; then
+      echo "Insert Audit must call the audit service in ${workflow_path}" >&2
+      exit 1
+    fi
+    if ! grep -Fq "X-Authenticated-Tenant-Id" <<<"$audit_headers"; then
+      echo "Insert Audit must forward X-Authenticated-Tenant-Id in ${workflow_path}" >&2
+      exit 1
+    fi
+    if ! grep -Fq "X-API-Key" <<<"$audit_headers"; then
+      echo "Insert Audit must forward X-API-Key in ${workflow_path}" >&2
+      exit 1
+    fi
+    for pattern in "tenant_id" "policy" "request_id"; do
+      if ! grep -Fq "$pattern" <<<"$audit_body"; then
+        echo "Insert Audit request body is missing '${pattern}' in ${workflow_path}" >&2
+        exit 1
+      fi
+    done
+  else
+    if ! grep -Fq '$1' <<<"$episode_query" || ! grep -Fq '$4::jsonb' <<<"$episode_query"; then
+      echo "Insert Episode query must be parameterized in ${workflow_path}" >&2
+      exit 1
+    fi
+    if [[ -z "$episode_replacement" || "$episode_replacement" == "null" ]]; then
+      echo "Insert Episode queryReplacement missing in ${workflow_path}" >&2
+      exit 1
+    fi
+
+    if ! grep -Fq '$1' <<<"$audit_query" || ! grep -Fq '$8' <<<"$audit_query"; then
+      echo "Insert Audit query must be parameterized in ${workflow_path}" >&2
+      exit 1
+    fi
+    if [[ -z "$audit_replacement" || "$audit_replacement" == "null" ]]; then
+      echo "Insert Audit queryReplacement missing in ${workflow_path}" >&2
+      exit 1
+    fi
   fi
 
   if ! grep -Fq "policy:" <<<"$success_response"; then

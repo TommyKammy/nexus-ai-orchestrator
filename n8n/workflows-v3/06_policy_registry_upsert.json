@@ -120,47 +120,67 @@
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "INSERT INTO policy_workflows (workflow_id, task_type, tenant_id, scope_pattern, constraints_jsonb, enabled) VALUES ($1, $2, $3, $4, $5::jsonb, $6) ON CONFLICT (workflow_id, task_type, tenant_id, scope_pattern) DO UPDATE SET constraints_jsonb = EXCLUDED.constraints_jsonb, enabled = EXCLUDED.enabled, updated_at = NOW();",
-        "additionalFields": {
-          "queryReplacement": "={{ [\n  $json.workflow_id,\n  $json.task_type,\n  $json.tenant_id,\n  $json.scope_pattern,\n  JSON.stringify($json.constraints || {}),\n  Boolean($json.enabled)\n] }}"
+        "method": "POST",
+        "url": "http://policy-bundle-server:8088/internal/tenant-data/policy/workflow/upsert",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.POLICY_BUNDLE_INTERNAL_API_KEY || $env.N8N_WEBHOOK_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ workflow_id: $json.workflow_id, task_type: $json.task_type, tenant_id: $json.tenant_id, scope_pattern: $json.scope_pattern, constraints: $json.constraints || {}, enabled: Boolean($json.enabled) }) }}",
+        "options": {
+          "timeout": 30000
         }
       },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         900,
         360
       ],
-      "name": "Upsert Workflow Rule",
-      "credentials": {
-        "postgres": {
-          "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-          "name": "ai-postgres"
-        }
-      }
+      "name": "Upsert Workflow Rule"
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "INSERT INTO policy_publish_logs (revision_id, action, actor, result, details_jsonb) VALUES ('draft', 'upsert', $1, 'ok', $2::jsonb);",
-        "additionalFields": {
-          "queryReplacement": "={{ [\n  $('Validate Input').first().json.actor,\n  JSON.stringify($('Validate Input').first().json)\n] }}"
+        "method": "POST",
+        "url": "http://policy-bundle-server:8088/internal/tenant-data/policy/publish-log",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.POLICY_BUNDLE_INTERNAL_API_KEY || $env.N8N_WEBHOOK_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ revision_id: 'draft', action: 'upsert', actor: $('Validate Input').first().json.actor, result: 'ok', details_jsonb: $('Validate Input').first().json }) }}",
+        "options": {
+          "timeout": 30000
         }
       },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         1130,
         360
       ],
-      "name": "Insert Upsert Log",
-      "credentials": {
-        "postgres": {
-          "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-          "name": "ai-postgres"
-        }
-      }
+      "name": "Insert Upsert Log"
     },
     {
       "parameters": {

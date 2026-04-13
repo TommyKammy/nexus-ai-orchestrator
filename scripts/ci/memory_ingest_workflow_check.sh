@@ -13,6 +13,10 @@ covered_workflows=(
   "n8n/workflows/01_memory_ingest_v3_cached.json"
 )
 
+service_boundary_workflows=(
+  "n8n/workflows-v3/01_memory_ingest.json"
+)
+
 insert_vector_required_patterns=(
   "content_hash"
   "metadata_jsonb"
@@ -244,12 +248,116 @@ check_workflow() {
   done <<<"$node_names_raw"
 }
 
+check_http_node_contract() {
+  local workflow_path="$1"
+  local node_name="$2"
+  local expected_url="$3"
+  local json_body="$4"
+  local header_json="$5"
+  shift 5
+  local required_patterns=("$@")
+  local actual_type
+  local method
+  local url
+  local header_dump
+  local tenant_header_value
+
+  actual_type="$(jq -r --arg node_name "$node_name" '.nodes[] | select(.name == $node_name) | .type' "$workflow_path")"
+  method="$(jq -r --arg node_name "$node_name" '.nodes[] | select(.name == $node_name) | .parameters.method' "$workflow_path")"
+  url="$(jq -r --arg node_name "$node_name" '.nodes[] | select(.name == $node_name) | .parameters.url' "$workflow_path")"
+  header_dump="$(jq -c --arg node_name "$node_name" '.nodes[] | select(.name == $node_name) | .parameters.headerParameters.parameters // []' "$workflow_path")"
+
+  if [[ "$actual_type" != "n8n-nodes-base.httpRequest" ]]; then
+    die "${node_name} must use httpRequest in ${workflow_path}"
+  fi
+  if [[ "$method" != "POST" ]]; then
+    die "${node_name} must use POST in ${workflow_path}"
+  fi
+  if [[ "$url" != "$expected_url" ]]; then
+    die "${node_name} must call ${expected_url} in ${workflow_path}"
+  fi
+
+  for pattern in "${required_patterns[@]}"; do
+    if ! grep -Fq "$pattern" <<<"$json_body"; then
+      die "${node_name} body is missing '${pattern}' in ${workflow_path}"
+    fi
+  done
+
+  if [[ -n "$header_json" && "$header_json" != "null" ]]; then
+    tenant_header_value="$(jq -r '.[] | select(.name == "X-Authenticated-Tenant-Id") | .value // empty' <<<"$header_dump")"
+    if [[ -z "$tenant_header_value" ]]; then
+      die "${node_name} must forward X-Authenticated-Tenant-Id in ${workflow_path}"
+    fi
+    if ! grep -Eq '\{\{[^}]*\$' <<<"$tenant_header_value"; then
+      die "${node_name} must source X-Authenticated-Tenant-Id from workflow data in ${workflow_path}"
+    fi
+  fi
+
+  if ! grep -Fq "X-API-Key" <<<"$header_dump"; then
+    die "${node_name} must forward X-API-Key in ${workflow_path}"
+  fi
+  if ! grep -Fq "POLICY_BUNDLE_INTERNAL_API_KEY" <<<"$header_dump" && ! grep -Fq "N8N_WEBHOOK_API_KEY" <<<"$header_dump"; then
+    die "${node_name} must source X-API-Key from workflow environment in ${workflow_path}"
+  fi
+}
+
+check_service_boundary_workflow() {
+  local workflow_path="$1"
+  local postgres_count
+  local insert_facts_body
+  local insert_vector_body
+  local insert_audit_body
+  local insert_vector_headers
+  local insert_audit_headers
+
+  postgres_count="$(jq -r '[.nodes[] | select(.type == "n8n-nodes-base.postgres")] | length' "$workflow_path")"
+  if [[ "$postgres_count" != "0" ]]; then
+    die "Service-boundary workflow must not keep Postgres nodes in ${workflow_path}"
+  fi
+
+  insert_facts_body="$(jq -r '.nodes[] | select(.name == "Insert Facts") | .parameters.jsonBody' "$workflow_path")"
+  insert_vector_body="$(jq -r '.nodes[] | select(.name == "Insert Vector") | .parameters.jsonBody' "$workflow_path")"
+  insert_audit_body="$(jq -r '.nodes[] | select(.name == "Insert Audit") | .parameters.jsonBody' "$workflow_path")"
+  insert_vector_headers="$(jq -c '.nodes[] | select(.name == "Insert Vector") | .parameters.headerParameters.parameters // []' "$workflow_path")"
+  insert_audit_headers="$(jq -c '.nodes[] | select(.name == "Insert Audit") | .parameters.headerParameters.parameters // []' "$workflow_path")"
+
+  check_http_node_contract \
+    "$workflow_path" \
+    "Insert Facts" \
+    "http://policy-bundle-server:8088/internal/tenant-data/memory/facts" \
+    "$insert_facts_body" \
+    "null" \
+    "facts"
+
+  check_http_node_contract \
+    "$workflow_path" \
+    "Insert Vector" \
+    "http://policy-bundle-server:8088/internal/tenant-data/memory/vector" \
+    "$insert_vector_body" \
+    "$insert_vector_headers" \
+    "tenant_id" \
+    "content_hash" \
+    "metadata_jsonb"
+
+  check_http_node_contract \
+    "$workflow_path" \
+    "Insert Audit" \
+    "http://policy-bundle-server:8088/internal/tenant-data/audit/event" \
+    "$insert_audit_body" \
+    "$insert_audit_headers" \
+    "tenant_id" \
+    "policy"
+}
+
 for workflow_path in "${covered_workflows[@]}"; do
+  if printf '%s\n' "${service_boundary_workflows[@]}" | grep -Fxq "$workflow_path"; then
+    check_service_boundary_workflow "$workflow_path"
+    continue
+  fi
   check_workflow "$workflow_path"
 done
 
 check_insert_vector_contract "n8n/workflows/01_memory_ingest.json"
-check_insert_vector_contract "n8n/workflows-v3/01_memory_ingest.json"
 check_insert_vector_contract "n8n/workflows/01_memory_ingest_v3_cached.json"
 
 echo "Memory ingest workflow metadata checks passed."

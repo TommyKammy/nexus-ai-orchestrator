@@ -14,6 +14,27 @@ SCRIPT_PATH = REPO_ROOT / "scripts" / "ci" / "memory_ingest_workflow_check.sh"
 class MemoryIngestWorkflowCheckTests(unittest.TestCase):
     maxDiff = None
 
+    def test_memory_ingest_validators_use_task_runner_safe_hashing(self):
+        workflow_paths = (
+            REPO_ROOT / "n8n" / "workflows" / "01_memory_ingest.json",
+            REPO_ROOT / "n8n" / "workflows-v3" / "01_memory_ingest.json",
+            REPO_ROOT / "n8n" / "workflows" / "01_memory_ingest_v3_cached.json",
+        )
+
+        for workflow_path in workflow_paths:
+            workflow = __import__("json").loads(workflow_path.read_text(encoding="utf-8"))
+            validator_code = next(
+                node["parameters"]["jsCode"]
+                for node in workflow["nodes"]
+                if node["name"] == "Validate and Filter"
+            )
+
+            self.assertNotIn("require('crypto')", validator_code)
+            self.assertNotIn("globalThis.crypto", validator_code)
+            self.assertIn("const K = [", validator_code)
+            self.assertIn("const contentHash = sha256Hex(normalizedText);", validator_code)
+            self.assertIn("content_hash: contentHash", validator_code)
+
     def _make_temp_repo(self) -> Path:
         tmpdir = Path(tempfile.mkdtemp(prefix="memory-ingest-workflow-check-"))
         self.addCleanup(shutil.rmtree, tmpdir, ignore_errors=True)
@@ -58,6 +79,50 @@ class MemoryIngestWorkflowCheckTests(unittest.TestCase):
             "type": node_type,
             "parameters": parameters or {},
         }
+
+    def _http_node(self, name: str, url: str, json_body: str, include_tenant_header: bool = False) -> dict:
+        headers = [
+            {"name": "Content-Type", "value": "application/json"},
+            {"name": "X-API-Key", "value": "={{ $env.POLICY_BUNDLE_INTERNAL_API_KEY || $env.N8N_WEBHOOK_API_KEY }}"},
+        ]
+        if include_tenant_header:
+            headers.append({"name": "X-Authenticated-Tenant-Id", "value": "={{ $json.tenant_id }}"})
+
+        return {
+            "name": name,
+            "type": "n8n-nodes-base.httpRequest",
+            "parameters": {
+                "method": "POST",
+                "url": url,
+                "sendHeaders": True,
+                "headerParameters": {"parameters": headers},
+                "sendBody": True,
+                "specifyBody": "json",
+                "jsonBody": json_body,
+                "options": {"timeout": 30000},
+            },
+        }
+
+    def _v3_service_boundary_nodes(self) -> list[dict]:
+        return [
+            self._http_node(
+                "Insert Facts",
+                "http://policy-bundle-server:8088/internal/tenant-data/memory/facts",
+                "={{ JSON.stringify({ facts: $json.facts || [] }) }}",
+            ),
+            self._http_node(
+                "Insert Vector",
+                "http://policy-bundle-server:8088/internal/tenant-data/memory/vector",
+                "={{ JSON.stringify({ tenant_id: $json.tenant_id, scope: $json.scope, content_hash: $json.content_hash, metadata_jsonb: { policy: $json.policy || {} } }) }}",
+                include_tenant_header=True,
+            ),
+            self._http_node(
+                "Insert Audit",
+                "http://policy-bundle-server:8088/internal/tenant-data/audit/event",
+                "={{ JSON.stringify({ payload_jsonb: { tenant_id: $json.tenant_id, policy: $json.policy || {} } }) }}",
+                include_tenant_header=True,
+            ),
+        ]
 
     def _run_check(self, repo_root: Path) -> subprocess.CompletedProcess[str]:
         bash_path = shutil.which("bash")
@@ -115,20 +180,16 @@ class MemoryIngestWorkflowCheckTests(unittest.TestCase):
             "n8n/workflows/01_memory_ingest.json",
             [
                 self._postgres_node("Insert Vector", safe_vector_query, safe_vector_replacement),
-                self._postgres_node("Insert Audit", "SELECT 1;"),
-            ],
-        )
-        self._write_workflow(
-            repo_root,
-            "n8n/workflows-v3/01_memory_ingest.json",
-            [
-                self._postgres_node("Insert Vector", safe_vector_query, safe_vector_replacement),
-                self._postgres_node("Insert Facts", "INSERT INTO memory_facts (subject) VALUES ($1);", "={{ ['value'] }}"),
                 self._postgres_node(
                     "Insert Audit",
                     "INSERT INTO audit_events (target) VALUES ('{{ $json.scope }}');",
                 ),
             ],
+        )
+        self._write_workflow(
+            repo_root,
+            "n8n/workflows-v3/01_memory_ingest.json",
+            self._v3_service_boundary_nodes(),
         )
         self._write_workflow(
             repo_root,
@@ -142,7 +203,7 @@ class MemoryIngestWorkflowCheckTests(unittest.TestCase):
         result = self._run_check(repo_root)
 
         self.assertNotEqual(result.returncode, 0, msg=result.stdout + result.stderr)
-        self.assertIn("n8n/workflows-v3/01_memory_ingest.json", result.stderr)
+        self.assertIn("n8n/workflows/01_memory_ingest.json", result.stderr)
         self.assertIn("Insert Audit", result.stderr)
 
     def test_check_passes_for_parameterized_runtime_queries_and_constant_sql(self):
@@ -205,11 +266,7 @@ class MemoryIngestWorkflowCheckTests(unittest.TestCase):
         self._write_workflow(
             repo_root,
             "n8n/workflows-v3/01_memory_ingest.json",
-            [
-                self._postgres_node("Insert Facts", safe_facts_query, "={{ ['s', 'p', 'o', 0.9] }}"),
-                self._postgres_node("Insert Vector", safe_vector_query, safe_vector_replacement),
-                self._postgres_node("Insert Audit", safe_audit_query, "={{ ['actor', 'action', 'target', 'allow', '{}'] }}"),
-            ],
+            self._v3_service_boundary_nodes(),
         )
         self._write_workflow(
             repo_root,
@@ -226,6 +283,84 @@ class MemoryIngestWorkflowCheckTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
         self.assertIn("Memory ingest workflow metadata checks passed.", result.stdout)
+
+    def test_check_fails_when_tenant_header_is_static_literal(self):
+        repo_root = self._make_temp_repo()
+        service_boundary_nodes = self._v3_service_boundary_nodes()
+        insert_vector = next(node for node in service_boundary_nodes if node["name"] == "Insert Vector")
+        tenant_header = next(
+            header
+            for header in insert_vector["parameters"]["headerParameters"]["parameters"]
+            if header["name"] == "X-Authenticated-Tenant-Id"
+        )
+        tenant_header["value"] = "tenant-static"
+
+        safe_vector_query = textwrap.dedent(
+            """
+            INSERT INTO memory_vectors (
+              tenant_id,
+              scope,
+              content,
+              embedding,
+              tags,
+              source,
+              content_hash,
+              metadata_jsonb,
+              created_at
+            )
+            VALUES (
+              $1,
+              $2,
+              $3,
+              $4::vector,
+              $5::jsonb,
+              $6,
+              $7,
+              $8::jsonb,
+              NOW()
+            )
+            ON CONFLICT (tenant_id, scope, content_hash)
+            WHERE content_hash IS NOT NULL
+            DO UPDATE SET
+              content = EXCLUDED.content,
+              embedding = EXCLUDED.embedding,
+              tags = EXCLUDED.tags,
+              source = EXCLUDED.source,
+              metadata_jsonb = EXCLUDED.metadata_jsonb
+            RETURNING id, content_hash;
+            """
+        ).strip()
+        safe_vector_replacement = "={{ ['tenant', 'scope', 'text', 'embedding', '[]', 'api', $input.first().json.content_hash, '{}'] }}"
+
+        self._write_workflow(
+            repo_root,
+            "n8n/workflows/01_memory_ingest.json",
+            [
+                self._postgres_node("Insert Vector", safe_vector_query, safe_vector_replacement),
+                self._postgres_node("Insert Audit", "SELECT 1;"),
+            ],
+        )
+        self._write_workflow(
+            repo_root,
+            "n8n/workflows-v3/01_memory_ingest.json",
+            service_boundary_nodes,
+        )
+        self._write_workflow(
+            repo_root,
+            "n8n/workflows/01_memory_ingest_v3_cached.json",
+            [
+                self._postgres_node("Insert Vector", safe_vector_query, safe_vector_replacement),
+                self._postgres_node("Insert Audit", "SELECT 1;"),
+            ],
+        )
+
+        result = self._run_check(repo_root)
+
+        self.assertNotEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+        self.assertIn(
+            "Insert Vector must source X-Authenticated-Tenant-Id from workflow data in n8n/workflows-v3/01_memory_ingest.json",
+            result.stderr,
+        )
 
     def test_check_fails_when_insert_vector_replacement_mentions_content_hash_without_binding_it(self):
         repo_root = self._make_temp_repo()
@@ -277,10 +412,7 @@ class MemoryIngestWorkflowCheckTests(unittest.TestCase):
         self._write_workflow(
             repo_root,
             "n8n/workflows-v3/01_memory_ingest.json",
-            [
-                self._postgres_node("Insert Vector", safe_vector_query, loose_vector_replacement),
-                self._postgres_node("Insert Audit", "SELECT 1;"),
-            ],
+            self._v3_service_boundary_nodes(),
         )
         self._write_workflow(
             repo_root,
@@ -350,10 +482,7 @@ class MemoryIngestWorkflowCheckTests(unittest.TestCase):
         self._write_workflow(
             repo_root,
             "n8n/workflows-v3/01_memory_ingest.json",
-            [
-                self._postgres_node("Insert Vector", safe_vector_query, safe_vector_replacement),
-                self._postgres_node("Insert Audit", "SELECT 1;"),
-            ],
+            self._v3_service_boundary_nodes(),
         )
         self._write_workflow(
             repo_root,
@@ -423,10 +552,7 @@ class MemoryIngestWorkflowCheckTests(unittest.TestCase):
         self._write_workflow(
             repo_root,
             "n8n/workflows-v3/01_memory_ingest.json",
-            [
-                self._postgres_node("Insert Vector", safe_vector_query, safe_vector_replacement),
-                self._postgres_node("Insert Audit", "SELECT 1;"),
-            ],
+            self._v3_service_boundary_nodes(),
         )
         self._write_workflow(
             repo_root,
@@ -498,10 +624,7 @@ class MemoryIngestWorkflowCheckTests(unittest.TestCase):
         self._write_workflow(
             repo_root,
             "n8n/workflows-v3/01_memory_ingest.json",
-            [
-                self._postgres_node("Insert Vector", safe_vector_query, safe_vector_replacement),
-                self._postgres_node("Insert Audit", "SELECT 1;"),
-            ],
+            self._v3_service_boundary_nodes(),
         )
         self._write_workflow(
             repo_root,

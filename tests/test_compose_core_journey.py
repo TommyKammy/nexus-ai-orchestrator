@@ -13,6 +13,7 @@ SCRIPT_PATH = REPO_ROOT / "scripts" / "ci" / "compose_core_journey.sh"
 
 class ComposeCoreJourneyPatchTests(unittest.TestCase):
     maxDiff = None
+    WORKFLOW_PATH = REPO_ROOT / "n8n" / "workflows-v3" / "01_memory_ingest.json"
 
     def _extract_patch_01(self) -> str:
         script_text = SCRIPT_PATH.read_text(encoding="utf-8")
@@ -24,7 +25,7 @@ class ComposeCoreJourneyPatchTests(unittest.TestCase):
         self.assertIsNotNone(match, "patch_01.jq heredoc not found")
         return match.group(1)
 
-    def test_patch_01_preserves_generated_content_hash_for_service_boundary_vector_insert(self):
+    def test_patch_01_preserves_validate_and_filter_logic_from_checked_in_workflow(self):
         jq_path = shutil.which("jq")
         if jq_path is None:
             self.fail("jq executable not found in PATH")
@@ -32,23 +33,15 @@ class ComposeCoreJourneyPatchTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="compose-core-journey-") as tmpdir:
             tmpdir_path = Path(tmpdir)
             patch_path = tmpdir_path / "patch_01.jq"
-            workflow_path = tmpdir_path / "workflow.json"
 
             patch_path.write_text(self._extract_patch_01(), encoding="utf-8")
-            workflow_path.write_text(
-                json.dumps(
-                    {
-                        "name": "seed",
-                        "nodes": [
-                            {
-                                "name": "Validate and Filter",
-                                "parameters": {"jsCode": "return []"},
-                            }
-                        ],
-                        "connections": {},
-                    }
-                ),
-                encoding="utf-8",
+            original_workflow = json.loads(
+                self.WORKFLOW_PATH.read_text(encoding="utf-8")
+            )
+            original_js_code = next(
+                node["parameters"]["jsCode"]
+                for node in original_workflow["nodes"]
+                if node["name"] == "Validate and Filter"
             )
 
             result = subprocess.run(
@@ -62,7 +55,7 @@ class ComposeCoreJourneyPatchTests(unittest.TestCase):
                     "ci/path",
                     "-f",
                     str(patch_path),
-                    str(workflow_path),
+                    str(self.WORKFLOW_PATH),
                 ],
                 capture_output=True,
                 text=True,
@@ -77,11 +70,8 @@ class ComposeCoreJourneyPatchTests(unittest.TestCase):
                 if node["name"] == "Validate and Filter"
             )
 
-            self.assertIn("createHash('sha256')", js_code)
-            self.assertIn("content_hash: contentHash", js_code)
-            self.assertIn("request_id: requestId", js_code)
-            self.assertIn("metadata", js_code)
-            self.assertNotIn("content_hash: null", js_code)
+            self.assertEqual(js_code, original_js_code)
+            self.assertEqual(patched["name"], "ci-name")
 
 
 if __name__ == "__main__":

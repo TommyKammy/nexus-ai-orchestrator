@@ -1,13 +1,11 @@
 # Default ownership
 * @TommyKammy
 
-# Governance-critical paths
-/.github/CODEOWNERS @TommyKammy
-/.github/workflows/ @TommyKammy
-/scripts/ci/ @TommyKammy
-/policy/ @TommyKammy
-/SECURITY.md @TommyKammy
-/n8n/workflows-v3/05_policy_approval.json @TommyKammy
+# Governance-critical paths use a shared owner set so review routing does not
+# collapse onto a single person for CI, policy, and security changes.
+/.github/CODEOWNERS @TommyKammy admin@example.com
+/.github/workflows/ @TommyKammy admin@example.com
+/SECURITY.md @TommyKammy admin@example.com
 
 # Infrastructure and deployment
 docker/** @TommyKammy
@@ -21,3 +19,9 @@ policy/** @TommyKammy
 # Workflow and docs
 n8n/** @TommyKammy
 docs/** @TommyKammy
+
+# Governance-critical overrides must stay below broader catch-all patterns
+# because GitHub CODEOWNERS applies the last matching rule.
+/scripts/ci/ @TommyKammy admin@example.com
+/policy/ @TommyKammy admin@example.com
+/n8n/workflows-v3/05_policy_approval.json @TommyKammy admin@example.com

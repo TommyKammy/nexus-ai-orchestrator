@@ -24,6 +24,8 @@ Treat changes to `policy/`, `.github/workflows/`, `.github/CODEOWNERS`,
 `scripts/ci/`, `SECURITY.md`, and
 `n8n/workflows-v3/05_policy_approval.json` as governance-sensitive. Those
 changes should not merge without two human approvals after the latest push.
+`/.github/CODEOWNERS` assigns those paths to a shared governance owner set,
+not a single owner, so code owner review routing remains redundant.
 
 ## Verification Command
 

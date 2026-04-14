@@ -11,23 +11,62 @@ PR_TEMPLATE = REPO_ROOT / ".github" / "pull_request_template.md"
 
 
 class GovernanceDefaultsTests(unittest.TestCase):
+    def _codeowners_owners_for(self, repo_path: str) -> list[str]:
+        owners: list[str] = []
+        normalized_path = repo_path.lstrip("/")
+
+        for raw_line in CODEOWNERS.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+
+            pattern, *line_owners = line.split()
+            normalized_pattern = pattern.lstrip("/")
+
+            if pattern == "*":
+                owners = line_owners
+                continue
+
+            if normalized_pattern.endswith("/"):
+                prefix = normalized_pattern.rstrip("/")
+                if normalized_path == prefix or normalized_path.startswith(f"{prefix}/"):
+                    owners = line_owners
+                continue
+
+            if normalized_pattern.endswith("/**"):
+                prefix = normalized_pattern[:-3].rstrip("/")
+                if normalized_path == prefix or normalized_path.startswith(f"{prefix}/"):
+                    owners = line_owners
+                continue
+
+            if normalized_path == normalized_pattern:
+                owners = line_owners
+
+        return owners
+
     def test_quality_gates_uses_regression_entrypoint(self):
         workflow = QUALITY_GATES_WORKFLOW.read_text(encoding="utf-8")
 
         self.assertIn("bash scripts/ci/regression.sh", workflow)
 
     def test_codeowners_covers_critical_governance_paths(self):
-        codeowners = CODEOWNERS.read_text(encoding="utf-8")
+        critical_paths = (
+            ".github/CODEOWNERS",
+            ".github/workflows/quality-gates.yml",
+            "scripts/ci/regression.sh",
+            "policy/opa/risk.rego",
+            "SECURITY.md",
+            "n8n/workflows-v3/05_policy_approval.json",
+        )
 
-        for entry in (
-            "/.github/CODEOWNERS",
-            "/.github/workflows/",
-            "/scripts/ci/",
-            "/policy/",
-            "/SECURITY.md",
-            "/n8n/workflows-v3/05_policy_approval.json",
-        ):
-            self.assertIn(entry, codeowners)
+        for repo_path in critical_paths:
+            owners = self._codeowners_owners_for(repo_path)
+            self.assertTrue(owners, f"missing CODEOWNERS coverage for {repo_path}")
+            self.assertGreaterEqual(
+                len(owners),
+                2,
+                f"expected multiple owners for {repo_path}, found {owners}",
+            )
 
     def test_branch_protection_runbook_documents_multi_person_reviews(self):
         runbook = BRANCH_PROTECTION_RUNBOOK.read_text(encoding="utf-8")

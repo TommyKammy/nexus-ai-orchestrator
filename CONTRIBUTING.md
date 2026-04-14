@@ -26,6 +26,8 @@ bash scripts/ci/regression.sh
   `.github/CODEOWNERS`, `scripts/ci/`, `SECURITY.md`, and
   `n8n/workflows-v3/05_policy_approval.json` require two human approvals
   after the latest push.
+- Those governance-sensitive paths are CODEOWNERS-managed with more than one
+  responsible owner so review routing is not single-owner only.
 
 Run a quick secret scan before opening a PR:
 

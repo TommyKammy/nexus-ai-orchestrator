@@ -62,10 +62,14 @@ class GovernanceDefaultsTests(unittest.TestCase):
         for repo_path in critical_paths:
             owners = self._codeowners_owners_for(repo_path)
             self.assertTrue(owners, f"missing CODEOWNERS coverage for {repo_path}")
+            distinct_owners = set(owners)
             self.assertGreaterEqual(
-                len(owners),
+                len(distinct_owners),
                 2,
-                f"expected multiple owners for {repo_path}, found {owners}",
+                (
+                    "expected multiple distinct owners for "
+                    f"{repo_path}, found owners={owners}, distinct={sorted(distinct_owners)}"
+                ),
             )
 
     def test_branch_protection_runbook_documents_multi_person_reviews(self):
